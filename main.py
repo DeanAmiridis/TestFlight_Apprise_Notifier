@@ -30,16 +30,20 @@ ID_LIST = os.getenv('ID_LIST', '').split(',')
 SLEEP_TIME = int(os.getenv('INTERVAL_CHECK', 10000))  # in ms
 TITLE_REGEX = re.compile(r'Join the (.+) beta - TestFlight - Apple')
 APPRISE_URLS = os.getenv('APPRISE_URL', '').split(',')
+HEARTBEAT_INTERVAL = 6 * 60 * 60  # 6 hours in seconds
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s [v%s]" % __version__)
+logging.basicConfig(level=logging.INFO, format=f"%(asctime)s - %(levelname)s - %(message)s [v{__version__}]")
 
 # Validate environment variables
-if not ID_LIST or not any(ID_LIST):
-    logging.error("Environment variable 'ID_LIST' is not set or empty.")
+ID_LIST = [tf_id.strip() for tf_id in os.getenv('ID_LIST', '').split(',') if tf_id.strip()]
+APPRISE_URLS = [url.strip() for url in os.getenv('APPRISE_URL', '').split(',') if url.strip()]
+
+if not ID_LIST:
+    logging.error("Environment variable 'ID_LIST' is not set or contains only empty values.")
     raise ValueError("Environment variable 'ID_LIST' is required.")
-if not APPRISE_URLS or not any(APPRISE_URLS):
-    logging.error("Environment variable 'APPRISE_URL' is not set or empty.")
+if not APPRISE_URLS:
+    logging.error("Environment variable 'APPRISE_URL' is not set or contains only empty values.")
     raise ValueError("Environment variable 'APPRISE_URL' is required.")
 
 # Initialize Apprise notifier
@@ -48,15 +52,23 @@ for url in APPRISE_URLS:
     if url:
         apobj.add(url)
 
-# Graceful shutdown
+# Graceful shutdown (cross-platform compatibility)
 shutdown_event = asyncio.Event()
 
 def handle_shutdown_signal():
     logging.info("Shutdown signal received. Cleaning up...")
     shutdown_event.set()
 
-signal.signal(signal.SIGINT, lambda s, f: handle_shutdown_signal())
-signal.signal(signal.SIGTERM, lambda s, f: handle_shutdown_signal())
+# Set WindowsSelectorEventLoopPolicy for Windows
+if os.name == 'nt':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+loop = asyncio.get_event_loop()
+for sig in (signal.SIGINT, signal.SIGTERM):
+    try:
+        loop.add_signal_handler(sig, handle_shutdown_signal)
+    except NotImplementedError:
+        logging.warning(f"Signal handling is not implemented for {sig} on this platform.")
 
 # FastAPI server
 app = FastAPI()
@@ -71,7 +83,7 @@ async def fetch_testflight_status(session, tf_id):
     try:
         async with session.get(url, headers={'Accept-Language': 'en-us'}) as response:
             if response.status != 200:
-                logging.warning(f"{response.status} - {tf_id} - Not Found.")
+                logging.warning(f"{response.status} - {tf_id} - Not Found. URL: {url}")
                 return
             
             text = await response.text()
@@ -88,10 +100,12 @@ async def fetch_testflight_status(session, tf_id):
             title_match = TITLE_REGEX.search(title)
             send_notification(url, apobj)
             logging.info(f"{response.status} - {tf_id} - {title_match.group(1) if title_match else 'Unknown'} - {status_text}")
+    except aiohttp.ClientResponseError as e:
+        logging.error(f"HTTP error fetching {tf_id} (URL: {url}): {e}")
     except aiohttp.ClientError as e:
-        logging.error(f"Network error fetching {tf_id}: {e}")
+        logging.error(f"Network error fetching {tf_id} (URL: {url}): {e}")
     except Exception as e:
-        logging.error(f"Error fetching {tf_id}: {e}")
+        logging.error(f"Unexpected error fetching {tf_id} (URL: {url}): {e}")
 
 async def watch():
     """Check all TestFlight links."""
@@ -106,7 +120,7 @@ async def heartbeat():
         message = f"Heartbeat - {current_time}"
         send_notification(message, apobj)
         print_green(message)
-        await asyncio.sleep(6 * 60 * 60)  # Every 6 hours
+        await asyncio.sleep(HEARTBEAT_INTERVAL)
 
 async def start_watching():
     """Continuously check TestFlight links."""
@@ -115,29 +129,34 @@ async def start_watching():
         await asyncio.sleep(SLEEP_TIME / 1000)  # Convert ms to seconds
 
 def start_fastapi():
-    """Start FastAPI server with a randomized port and optional IP binding."""
-    default_host = "0.0.0.0"
-    default_port = random.randint(8000, 9000)  # Randomize port between 8000 and 9000
+    """Start FastAPI server with default host and port."""
+    default_host = os.getenv("FASTAPI_HOST", "0.0.0.0")
+    default_port = int(os.getenv("FASTAPI_PORT", random.randint(8000, 9000)))
 
-    # Allow user to specify host and port via input
-    host = input(f"Enter the host IP to bind (default: {default_host}): ").strip() or default_host
-    try:
-        port = int(input(f"Enter the port to bind (default: {default_port}): ").strip() or default_port)
-    except ValueError:
-        logging.warning(f"Invalid port entered. Using default port: {default_port}")
-        port = default_port
-
-    logging.info(f"Starting FastAPI server on {host}:{port}")
-    uvicorn.run(app, host=host, port=port)
+    logging.info(f"Starting FastAPI server on {default_host}:{default_port}")
+    uvicorn.run(app, host=default_host, port=default_port)
 
 def main():
     """Main function to start all tasks."""
     threading.Thread(target=start_fastapi, daemon=True).start()
-    asyncio.run(async_main())
+    try:
+        asyncio.run(async_main())
+    except KeyboardInterrupt:
+        logging.info("Shutdown initiated by user (CTRL+C).")
+    except Exception as e:
+        logging.error(f"Unexpected error during shutdown: {e}")
+    finally:
+        logging.info("Application has stopped.")
 
 async def async_main():
     """Run async tasks in the main event loop."""
-    await asyncio.gather(start_watching(), heartbeat(), shutdown_event.wait())
+    try:
+        await asyncio.gather(start_watching(), heartbeat(), shutdown_event.wait())
+    except asyncio.CancelledError:
+        logging.info("Async tasks cancelled during shutdown.")
+    finally:
+        logging.info("Async main loop has exited.")
 
 if __name__ == "__main__":
+    main()
     main()
