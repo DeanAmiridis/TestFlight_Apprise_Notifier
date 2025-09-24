@@ -13,11 +13,11 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from datetime import datetime
 from utils.notifications import send_notification
-from utils.formatting import format_datetime, format_link
+from utils.formatting import format_datetime, format_link, format_notification_link
 from utils.colors import print_cyan, print_green
 
 # Version
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 # Load environment variables
 load_dotenv()
@@ -59,16 +59,31 @@ def handle_shutdown_signal():
     logging.info("Shutdown signal received. Cleaning up...")
     shutdown_event.set()
 
-# Set WindowsSelectorEventLoopPolicy for Windows
-if os.name == 'nt':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
-loop = asyncio.get_event_loop()
-for sig in (signal.SIGINT, signal.SIGTERM):
+# Only attach signal handlers on non-Windows
+if os.name != "nt":
     try:
-        loop.add_signal_handler(sig, handle_shutdown_signal)
-    except NotImplementedError:
-        logging.warning(f"Signal handling is not implemented for {sig} on this platform.")
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, handle_shutdown_signal)
+        except NotImplementedError:
+            logging.warning(f"Signal handling is not implemented for {sig} on this platform.")
+
+# Set WindowsSelectorEventLoopPolicy for Windows
+if os.name != "nt":
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, handle_shutdown_signal)
+        except NotImplementedError:
+            logging.warning(f"Signal handling is not implemented for {sig} on this platform.")
 
 # FastAPI server
 app = FastAPI()
@@ -98,7 +113,8 @@ async def fetch_testflight_status(session, tf_id):
             title_tag = soup.find('title')
             title = title_tag.text if title_tag else 'Unknown'
             title_match = TITLE_REGEX.search(title)
-            send_notification(url, apobj)
+            notify_msg = format_notification_link(TESTFLIGHT_URL, tf_id)
+            send_notification(notify_msg, apobj)
             logging.info(f"{response.status} - {tf_id} - {title_match.group(1) if title_match else 'Unknown'} - {status_text}")
     except aiohttp.ClientResponseError as e:
         logging.error(f"HTTP error fetching {tf_id} (URL: {url}): {e}")
@@ -143,6 +159,7 @@ def main():
         asyncio.run(async_main())
     except KeyboardInterrupt:
         logging.info("Shutdown initiated by user (CTRL+C).")
+        shutdown_event.set()
     except Exception as e:
         logging.error(f"Unexpected error during shutdown: {e}")
     finally:
