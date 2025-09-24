@@ -1,16 +1,11 @@
 from __future__ import annotations
 import re
-import requests
+import aiohttp
 
 from datetime import datetime
 
-def format_datetime(dt: datetime) -> str:
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
-    
-try:
-    from bs4 import BeautifulSoup
-except Exception:
-    BeautifulSoup = None
+# Cache for app names
+app_name_cache = {}
 
 DEFAULT_TIMEOUT = 10
 HEADERS = {
@@ -21,8 +16,10 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
+
 def _safe_join(base_url: str, tf_id: str) -> str:
     return f"{base_url.rstrip('/')}/{tf_id.lstrip('/')}"
+
 
 def _extract_title_html(html: str) -> str | None:
     if BeautifulSoup is not None:
@@ -34,6 +31,7 @@ def _extract_title_html(html: str) -> str | None:
     if m:
         return re.sub(r"\s+", " ", m.group(1)).strip()
     return None
+
 
 def _normalize_app_name(raw_title: str | None) -> str:
     if not raw_title:
@@ -48,19 +46,39 @@ def _normalize_app_name(raw_title: str | None) -> str:
     name = re.sub(r"\s+on\s+TestFlight\s*$", "", raw_title, flags=re.IGNORECASE).strip()
     return name or "UnknownApp"
 
-def get_app_name(base_url: str, tf_id: str) -> str:
+
+async def get_app_name(base_url: str, tf_id: str) -> str:
+    cache_key = f"{base_url}:{tf_id}"
+    if cache_key in app_name_cache:
+        return app_name_cache[cache_key]
+
     url = _safe_join(base_url, tf_id)
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=DEFAULT_TIMEOUT)
-        resp.raise_for_status()
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                headers=HEADERS,
+                timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT),
+            ) as resp:
+                resp.raise_for_status()
+                raw_title = _extract_title_html(await resp.text())
+                app_name = _normalize_app_name(raw_title)
+                app_name_cache[cache_key] = app_name
+                return app_name
     except Exception:
-        return "UnknownApp"
-    raw_title = _extract_title_html(resp.text)
-    return _normalize_app_name(raw_title)
+        app_name = "UnknownApp"
+        app_name_cache[cache_key] = app_name
+        return app_name
+
 
 def format_link(base_url: str, tf_id: str) -> str:
     return f"{base_url.rstrip('/')}/{tf_id.lstrip('/')}"
 
-def format_notification_link(base_url: str, tf_id: str) -> str:
-    app_name = get_app_name(base_url, tf_id)
+
+async def format_notification_link(base_url: str, tf_id: str) -> str:
+    app_name = await get_app_name(base_url, tf_id)
     return f"{app_name}-{format_link(base_url, tf_id)}"
+
+
+def format_datetime(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
