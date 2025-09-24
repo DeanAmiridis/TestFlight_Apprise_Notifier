@@ -71,18 +71,7 @@ async def get_app_name(base_url: str, tf_id: str) -> str:
             ) as resp:
                 resp.raise_for_status()
                 html = await resp.text()
-                if BeautifulSoup is not None:
-                    soup = BeautifulSoup(html, "html.parser")
-                    # Use the specific selector for app name
-                    app_element = soup.select_one(
-                        "#steps > div > div > div.gradient-column.app-gradient > div.app-steps > div.step1"
-                    )
-                    if app_element:
-                        raw_name = app_element.text.strip()
-                        app_name = _normalize_app_name(raw_name)
-                        app_name_cache[cache_key] = app_name
-                        return app_name
-                # Fallback to title
+                # Use title for app name
                 raw_title = _extract_title_html(html)
                 app_name = _normalize_app_name(raw_title)
                 app_name_cache[cache_key] = app_name
