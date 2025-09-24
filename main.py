@@ -22,7 +22,7 @@ from utils.formatting import (
 from utils.colors import print_green
 
 # Version
-__version__ = "1.0.1"
+__version__ = "1.0.3"
 
 # Load environment variables
 load_dotenv()
