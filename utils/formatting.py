@@ -43,6 +43,9 @@ def _normalize_app_name(raw_title: str | None) -> str:
     if not raw_title:
         return "UnknownApp"
 
+    # Remove "Step X:" prefixes
+    raw_title = re.sub(r"^Step \d+:\s*", "", raw_title, flags=re.IGNORECASE).strip()
+
     # Match "Join the (AppName) beta - TestFlight - Apple"
     m = re.search(r"Join the (.+) beta - TestFlight - Apple", raw_title)
     if m:
@@ -67,7 +70,20 @@ async def get_app_name(base_url: str, tf_id: str) -> str:
                 timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT),
             ) as resp:
                 resp.raise_for_status()
-                raw_title = _extract_title_html(await resp.text())
+                html = await resp.text()
+                if BeautifulSoup is not None:
+                    soup = BeautifulSoup(html, "html.parser")
+                    # Use the specific selector for app name
+                    app_element = soup.select_one(
+                        "#steps > div > div > div.gradient-column.app-gradient > div.app-steps > div.step1"
+                    )
+                    if app_element:
+                        raw_name = app_element.text.strip()
+                        app_name = _normalize_app_name(raw_name)
+                        app_name_cache[cache_key] = app_name
+                        return app_name
+                # Fallback to title
+                raw_title = _extract_title_html(html)
                 app_name = _normalize_app_name(raw_title)
                 app_name_cache[cache_key] = app_name
                 return app_name
