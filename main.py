@@ -8,6 +8,7 @@ import threading
 import logging
 import signal
 import random
+import socket
 from fastapi import FastAPI
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
@@ -184,7 +185,21 @@ def start_fastapi():
     default_host = os.getenv("FASTAPI_HOST", "0.0.0.0")
     default_port = int(os.getenv("FASTAPI_PORT", random.randint(8000, 9000)))
 
-    logging.info(f"Starting FastAPI server on {default_host}:{default_port}")
+    # Get the actual IP for logging
+    if default_host == "0.0.0.0":
+        try:
+            # Get the IP address of the machine
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))  # Connect to a public IP to get local IP
+            actual_ip = s.getsockname()[0]
+            s.close()
+            logging.info(
+                f"Starting FastAPI server on {default_host}:{default_port} (accessible at http://{actual_ip}:{default_port})"
+            )
+        except Exception:
+            logging.info(f"Starting FastAPI server on {default_host}:{default_port}")
+    else:
+        logging.info(f"Starting FastAPI server on {default_host}:{default_port}")
     uvicorn.run(app, host=default_host, port=default_port)
 
 

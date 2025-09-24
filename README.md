@@ -8,11 +8,13 @@ Uses **FastAPI** for the server, **Apprise** for notifications, and **aiohttp** 
 ## ✨ Features  
 
 ✅ **TestFlight Monitoring** – Automatically checks TestFlight beta links for availability.  
-🔔 **Notifications** – Sends alerts using Apprise when slots open up.  
+🔔 **Notifications** – Sends alerts using Apprise when slots open up, including app icons as attachments for supported services (e.g., Discord, Slack).  
 ❤️ **Heartbeat Notifications** – Sends periodic status updates to ensure the bot is active.  
 📜 **Logging** – Uses Python’s `logging` module for better log management.  
 🛑 **Graceful Shutdown** – Cleans up resources properly on exit.  
 🔧 **Environment Variable Validation** – Ensures required configurations are set before starting.  
+🎨 **App Name Extraction** – Accurately extracts and displays app names from TestFlight pages.  
+🌐 **Web Dashboard** – Provides a FastAPI server with status endpoint, displaying the actual IP for access.  
 
 ---
 
@@ -39,6 +41,12 @@ APPRISE_URL=mailto://user:password@smtp.example.com,discord://webhook_id/webhook
 
 # Interval in milliseconds between checks
 INTERVAL_CHECK=10000  
+
+# Optional: FastAPI server host (default: 0.0.0.0)
+FASTAPI_HOST=0.0.0.0  
+
+# Optional: FastAPI server port (default: random 8000-9000)
+FASTAPI_PORT=8080  
 ```
 
 ---
@@ -49,14 +57,14 @@ Start the script using:
 ```bash
 python main.py
 ```
-The FastAPI server will be accessible via URL shown in the console like this: **[http://localhost:8xxx](http://localhost:8xxx)**  
+The FastAPI server will be accessible via the URL shown in the console, displaying the actual IP address (e.g., **[http://192.168.1.100:8080](http://192.168.1.100:8080)**).  
 
 ---
 
 ## 🛠 Utility Functions  
 
-🔹 **`utils/notifications.py`** – Handles notifications with error handling.  
-🔹 **`utils/formatting.py`** – Provides functions for formatting dates & links.  
+🔹 **`utils/notifications.py`** – Handles notifications with error handling and icon attachments.  
+🔹 **`utils/formatting.py`** – Provides functions for formatting dates, links, and extracting app names/icons.  
 🔹 **`utils/colors.py`** – Adds color-coded console output for better visibility.  
 
 ---
@@ -68,7 +76,8 @@ The application logs messages in the console with timestamps and log levels:
 ```plaintext
 2025-04-02 12:00:00 - INFO - Notification sent: Heartbeat - 2025-04-02 12:00:00  
 2025-04-02 12:01:00 - INFO - 200 - abc123 - AppName - Available  
-Notification sent: https://testflight.apple.com/join/abc123  
+Notification sent: Slots available for AppName: https://testflight.apple.com/join/abc123  
+2025-04-02 12:01:00 - INFO - Starting FastAPI server on 0.0.0.0:8080 (accessible at http://192.168.1.100:8080)
 ```
 
 ---
