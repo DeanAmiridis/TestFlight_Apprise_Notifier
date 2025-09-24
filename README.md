@@ -49,7 +49,7 @@ Start the script using:
 ```bash
 python main.py
 ```
-The FastAPI server will be accessible at: **[http://localhost:8089](http://localhost:8089)**  
+The FastAPI server will be accessible via URL shown in the console like this: **[http://localhost:8xxx](http://localhost:8xxx)**  
 
 ---
 
