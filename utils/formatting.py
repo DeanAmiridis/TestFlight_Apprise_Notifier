@@ -43,8 +43,8 @@ def _normalize_app_name(raw_title: str | None) -> str:
     if not raw_title:
         return "UnknownApp"
 
-    # Remove "Step X:" prefixes
-    raw_title = re.sub(r"^Step \d+:\s*", "", raw_title, flags=re.IGNORECASE).strip()
+    # Remove "Step X" patterns
+    raw_title = re.sub(r"Step \d+", "", raw_title, flags=re.IGNORECASE).strip()
 
     # Match "Join the (AppName) beta - TestFlight - Apple"
     m = re.search(r"Join the (.+) beta - TestFlight - Apple", raw_title)
