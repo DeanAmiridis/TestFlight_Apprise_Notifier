@@ -4,8 +4,14 @@ import aiohttp
 
 from datetime import datetime
 
-# Cache for app names
+try:
+    from bs4 import BeautifulSoup
+except Exception:
+    BeautifulSoup = None
+
+# Cache for app names and icons
 app_name_cache = {}
+app_icon_cache = {}
 
 DEFAULT_TIMEOUT = 10
 HEADERS = {
@@ -71,13 +77,47 @@ async def get_app_name(base_url: str, tf_id: str) -> str:
         return app_name
 
 
+async def get_app_icon(base_url: str, tf_id: str) -> str:
+    cache_key = f"{base_url}:{tf_id}"
+    if cache_key in app_icon_cache:
+        return app_icon_cache[cache_key]
+
+    url = _safe_join(base_url, tf_id)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                headers=HEADERS,
+                timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT),
+            ) as resp:
+                resp.raise_for_status()
+                html = await resp.text()
+                if BeautifulSoup is not None:
+                    soup = BeautifulSoup(html, "html.parser")
+                    # Assume the app icon is the first img tag or with class 'app-icon'
+                    img = soup.find("img", class_="app-icon") or soup.find("img")
+                    if img and img.get("src"):
+                        icon_url = img["src"]
+                        # Make absolute if relative
+                        if icon_url.startswith("/"):
+                            icon_url = f"https://testflight.apple.com{icon_url}"
+                        app_icon_cache[cache_key] = icon_url
+                        return icon_url
+    except Exception:
+        pass
+    # Default icon or empty
+    icon_url = ""
+    app_icon_cache[cache_key] = icon_url
+    return icon_url
+
+
 def format_link(base_url: str, tf_id: str) -> str:
     return f"{base_url.rstrip('/')}/{tf_id.lstrip('/')}"
 
 
 async def format_notification_link(base_url: str, tf_id: str) -> str:
     app_name = await get_app_name(base_url, tf_id)
-    return f"{app_name}-{format_link(base_url, tf_id)}"
+    return f"Slots available for {app_name}: {format_link(base_url, tf_id)}"
 
 
 def format_datetime(dt: datetime) -> str:

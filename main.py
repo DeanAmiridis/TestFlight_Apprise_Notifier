@@ -13,7 +13,12 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from datetime import datetime
 from utils.notifications import send_notification, send_notification_async
-from utils.formatting import format_datetime, format_link, format_notification_link
+from utils.formatting import (
+    format_datetime,
+    format_link,
+    format_notification_link,
+    get_app_icon,
+)
 from utils.colors import print_green
 
 # Version
@@ -137,7 +142,8 @@ async def fetch_testflight_status(session, tf_id):
             title = title_tag.text if title_tag else "Unknown"
             title_match = TITLE_REGEX.search(title)
             notify_msg = await format_notification_link(TESTFLIGHT_URL, tf_id)
-            await send_notification_async(notify_msg, apobj)
+            icon_url = await get_app_icon(TESTFLIGHT_URL, tf_id)
+            await send_notification_async(notify_msg, apobj, icon_url)
             logging.info(
                 f"{response.status} - {tf_id} - {title_match.group(1) if title_match else 'Unknown'} - {status_text}"
             )
