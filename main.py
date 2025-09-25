@@ -9,6 +9,7 @@ import logging
 import signal
 import random
 import itertools
+import time
 from collections import deque
 from fastapi import FastAPI, HTTPException, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -24,11 +25,128 @@ from utils.formatting import (
     format_notification_link,
     get_app_icon,
     get_app_name,
+    app_name_cache,
+    app_icon_cache,
 )
 from utils.colors import print_green
 
+# Circuit breaker for external requests
+_request_failures = {}
+_circuit_breaker_threshold = 5
+_circuit_breaker_timeout = 300  # 5 minutes
+
+# Global HTTP session and lock
+_http_session = None
+_session_lock = threading.Lock()
+
+
+def is_circuit_breaker_open(url: str) -> bool:
+    """Check if circuit breaker is open for a URL."""
+    if url in _request_failures:
+        failures, last_failure = _request_failures[url]
+        if failures >= _circuit_breaker_threshold:
+            if time.time() - last_failure < _circuit_breaker_timeout:
+                return True
+            else:
+                # Reset circuit breaker after timeout
+                del _request_failures[url]
+    return False
+
+
+def record_request_failure(url: str):
+    """Record a request failure for circuit breaker."""
+    if url not in _request_failures:
+        _request_failures[url] = [0, 0]
+    _request_failures[url][0] += 1
+    _request_failures[url][1] = time.time()
+
+
+def record_request_success(url: str):
+    """Record a request success, resetting circuit breaker."""
+    if url in _request_failures:
+        del _request_failures[url]
+
+
+async def get_http_session() -> aiohttp.ClientSession:
+    """Get or create a shared HTTP session with connection pooling."""
+    global _http_session
+    if _http_session is None or _http_session.closed:
+        with _session_lock:
+            if _http_session is None or _http_session.closed:
+                connector = aiohttp.TCPConnector(
+                    limit=20,  # Connection pool size
+                    limit_per_host=5,  # Connections per host
+                    ttl_dns_cache=300,  # DNS cache TTL
+                    use_dns_cache=True,
+                    keepalive_timeout=60,
+                    enable_cleanup_closed=True,
+                )
+                timeout = aiohttp.ClientTimeout(
+                    total=30,  # Total timeout
+                    connect=10,  # Connection timeout
+                    sock_read=10,  # Socket read timeout
+                )
+                _http_session = aiohttp.ClientSession(
+                    connector=connector,
+                    timeout=timeout,
+                    headers={
+                        "User-Agent": "TestFlight-Notifier/1.0.5b",
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Accept-Language": "en-US,en;q=0.9",
+                        "Accept-Encoding": "gzip, deflate, br",
+                        "Connection": "keep-alive",
+                    },
+                )
+    return _http_session
+
+
 # Version
-__version__ = "1.0.5b"
+__version__ = "1.0.5c"
+
+
+def get_multiline_env_value(key: str) -> str:
+    """Get environment value that may span multiple lines in .env file."""
+    try:
+        env_path = ".env"
+        if not os.path.exists(env_path):
+            return os.getenv(key, "")
+
+        with open(env_path, "r") as f:
+            lines = f.readlines()
+
+        # Find the key and collect all continuation lines
+        value_lines = []
+        in_multiline = False
+
+        for line in lines:
+            line = line.strip()
+            if line.startswith(f"{key}="):
+                # Start of the key
+                value_part = line[len(f"{key}=") :]
+                if value_part.startswith('"') and value_part.endswith('"'):
+                    # Quoted value - remove quotes and unescape
+                    return value_part[1:-1].replace("\\n", "\n")
+                else:
+                    # Multi-line value starting
+                    value_lines.append(value_part.rstrip(","))
+                    in_multiline = True
+            elif in_multiline and line and not line.startswith("#") and "=" not in line:
+                # Continuation line
+                value_lines.append(line.rstrip(","))
+            elif in_multiline and (
+                line.startswith(("APPRISE_URL=", "ID_LIST=", "INTERVAL_CHECK="))
+                or not line
+            ):
+                # End of multi-line value (next key or empty line)
+                break
+
+        if value_lines:
+            return "\n".join(value_lines)
+        else:
+            return os.getenv(key, "")
+    except Exception:
+        return os.getenv(key, "")
+
 
 # Load environment variables
 load_dotenv()
@@ -40,7 +158,14 @@ NOT_OPEN_TEXT = "This beta isn't accepting any new testers right now."
 id_list_raw = os.getenv("ID_LIST", "").split(",")
 SLEEP_TIME = int(os.getenv("INTERVAL_CHECK", "10000"))  # in ms
 TITLE_REGEX = re.compile(r"Join the (.+) beta - TestFlight - Apple")
-apprise_urls_raw = os.getenv("APPRISE_URL", "").split(",")
+
+# Parse Apprise URLs (supporting multi-line format)
+apprise_url_raw = get_multiline_env_value("APPRISE_URL")
+apprise_urls_raw = [
+    url.strip().rstrip(",")
+    for url in apprise_url_raw.replace("\n", ",").split(",")
+    if url.strip()
+]
 HEARTBEAT_INTERVAL = 6 * 60 * 60  # 6 hours in seconds
 
 # Configure logging
@@ -107,6 +232,10 @@ for url in APPRISE_URLS:
 id_list_lock = threading.Lock()
 current_id_list = ID_LIST.copy()  # Thread-safe copy for monitoring
 
+# Global variables for dynamic Apprise URL management
+apprise_urls_lock = threading.Lock()
+current_apprise_urls = APPRISE_URLS.copy()  # Thread-safe copy for monitoring
+
 
 def get_current_id_list():
     """Thread-safe function to get current ID list."""
@@ -114,8 +243,14 @@ def get_current_id_list():
         return current_id_list.copy()
 
 
-def update_env_file(new_id_list):
-    """Safely update the .env file with new ID list."""
+def get_current_apprise_urls():
+    """Thread-safe function to get current Apprise URLs list."""
+    with apprise_urls_lock:
+        return current_apprise_urls.copy()
+
+
+def update_env_file(key: str, new_values: list[str]):
+    """Safely update the .env file with new values for a given key."""
     try:
         # Read current .env content
         env_path = ".env"
@@ -126,23 +261,36 @@ def update_env_file(new_id_list):
         with open(env_path, "r") as f:
             lines = f.readlines()
 
-        # Find and update ID_LIST line
+        # Find and update the key line
         updated = False
         for i, line in enumerate(lines):
-            if line.startswith("ID_LIST="):
-                lines[i] = f"ID_LIST={','.join(new_id_list)}\n"
+            if line.startswith(f"{key}="):
+                # Write each URL on its own line with a comma
+                if new_values:
+                    lines[i] = f"{key}={new_values[0]},\n"
+                    # Insert additional lines after the first one
+                    for j, url in enumerate(new_values[1:], 1):
+                        lines.insert(i + j, f"{url},\n")
+                else:
+                    lines[i] = f"{key}=\n"
                 updated = True
                 break
 
         if not updated:
-            # Add ID_LIST if it doesn't exist
-            lines.append(f"ID_LIST={','.join(new_id_list)}\n")
+            # Add the key if it doesn't exist
+            if new_values:
+                lines.append(f"{key}={new_values[0]},\n")
+                # Add additional lines
+                for url in new_values[1:]:
+                    lines.append(f"{url},\n")
+            else:
+                lines.append(f"{key}=\n")
 
         # Write back to file atomically
         with open(env_path, "w") as f:
             f.writelines(lines)
 
-        logging.info(f"Updated .env file with {len(new_id_list)} TestFlight IDs")
+        logging.info(f"Updated .env file with {len(new_values)} {key} values")
         return True
     except Exception as e:
         logging.error(f"Failed to update .env file: {e}")
@@ -187,7 +335,7 @@ def add_testflight_id(tf_id):
             return False, "TestFlight ID already exists"
 
         new_list = current_id_list + [tf_id]
-        if update_env_file(new_list):
+        if update_env_file("ID_LIST", new_list):
             current_id_list.append(tf_id)
             logging.info(f"Added TestFlight ID: {tf_id}")
             # Send notification about the addition
@@ -206,7 +354,7 @@ def remove_testflight_id(tf_id):
             return False, "TestFlight ID not found"
 
         new_list = [id for id in current_id_list if id != tf_id]
-        if update_env_file(new_list):
+        if update_env_file("ID_LIST", new_list):
             current_id_list.remove(tf_id)
             logging.info(f"Removed TestFlight ID: {tf_id}")
             # Send notification about the removal
@@ -218,8 +366,292 @@ def remove_testflight_id(tf_id):
             return False, "Failed to update .env file"
 
 
+def validate_apprise_url(url: str) -> tuple[bool, str]:
+    """Validate if an Apprise URL is properly formatted and supported."""
+    if not url or not url.strip():
+        return False, "Apprise URL cannot be empty"
+
+    url = url.strip()
+
+    # Use Apprise library to validate the URL format
+    try:
+        # Create a temporary Apprise object to test URL validity
+        test_apprise = apprise.Apprise()
+        result = test_apprise.add(url)
+
+        if result:
+            # URL was successfully added, get service information
+            urls = test_apprise.urls()
+            if urls:
+                service_info = urls[0]
+                service_name = service_info.get("service_name", "Unknown Service")
+                return True, f"Valid {service_name} URL"
+            else:
+                return True, "Valid Apprise URL"
+        else:
+            # Try to provide more specific error information
+            msg = (
+                "Invalid Apprise URL format. Please check "
+                "the URL syntax and ensure the service is supported."
+            )
+            return False, msg
+
+    except Exception as e:
+        # Fallback to basic validation if Apprise validation fails
+        logging.warning(f"Apprise validation error for URL {url}: {e}")
+
+        # Basic URL validation - should start with a protocol
+        supported_protocols = [
+            # Productivity Based Notifications
+            "apprise://",
+            "apprises://",
+            "ses://",
+            "bark://",
+            "barks://",
+            "bluesky://",
+            "chantify://",
+            "discord://",
+            "emby://",
+            "embys://",
+            "enigma2://",
+            "enigma2s://",
+            "fcm://",
+            "feishu://",
+            "flock://",
+            "gchat://",
+            "gotify://",
+            "gotifys://",
+            "growl://",
+            "guilded://",
+            "hassio://",
+            "hassios://",
+            "ifttt://",
+            "join://",
+            "kodi://",
+            "kodis://",
+            "kumulos://",
+            "lametric://",
+            "lark://",
+            "line://",
+            "mailgun://",
+            "mastodon://",
+            "mastodons://",
+            "matrix://",
+            "matrixs://",
+            "mmost://",
+            "mmosts://",
+            "workflows://",
+            "msteams://",
+            "misskey://",
+            "misskeys://",
+            "mqtt://",
+            "mqtts://",
+            "ncloud://",
+            "nclouds://",
+            "nctalk://",
+            "nctalks://",
+            "notica://",
+            "notifiarr://",
+            "notifico://",
+            "ntfy://",
+            "o365://",
+            "onesignal://",
+            "opsgenie://",
+            "pagerduty://",
+            "pagertree://",
+            "parsep://",
+            "parseps://",
+            "popcorn://",
+            "prowl://",
+            "pbul://",
+            "pjet://",
+            "pjets://",
+            "push://",
+            "pushed://",
+            "pushme://",
+            "pushover://",
+            "pover://",
+            "pushplus://",
+            "psafer://",
+            "psafers://",
+            "pushy://",
+            "pushdeer://",
+            "pushdeers://",
+            "qq://",
+            "reddit://",
+            "resend://",
+            "revolt://",
+            "rocket://",
+            "rockets://",
+            "rsyslog://",
+            "ryver://",
+            "sendgrid://",
+            "sendpulse://",
+            "schan://",
+            "signal://",
+            "signals://",
+            "signl4://",
+            "simplepush://",
+            "slack://",
+            "smtp2go://",
+            "sparkpost://",
+            "spike://",
+            "splunk://",
+            "victorops://",
+            "spugpush://",
+            "strmlabs://",
+            "synology://",
+            "synologys://",
+            "syslog://",
+            "tgram://",
+            "twitter://",
+            "twist://",
+            "vapid://",
+            "wxteams://",
+            "wecombot://",
+            "whatsapp://",
+            "wxpusher://",
+            "xbmc://",
+            "xbmcs://",
+            "zulip://",
+            # SMS Notifications
+            "atalk://",
+            "aprs://",
+            "sns://",
+            "bulksms://",
+            "bulkvs://",
+            "burstsms://",
+            "clickatell://",
+            "clicksend://",
+            "dapnet://",
+            "d7sms://",
+            "dingtalk://",
+            "freemobile://",
+            "httpsms://",
+            "kavenegar://",
+            "msgbird://",
+            "msg91://",
+            "plivo://",
+            "seven://",
+            "sfr://",
+            "smpp://",
+            "smpps://",
+            "smseagle://",
+            "smseagles://",
+            "smsmgr://",
+            "threema://",
+            "twilio://",
+            "voipms://",
+            "nexmo://",
+            # Desktop Notifications
+            "dbus://",
+            "qt://",
+            "glib://",
+            "kde://",
+            "gnome://",
+            "macosx://",
+            "windows://",
+            # Email Notifications
+            "mailto://",
+            "mailtos://",
+            # Custom Notifications
+            "form://",
+            "forms://",
+            "json://",
+            "jsons://",
+            "xml://",
+            "xmls://",
+            # Backward compatibility
+            "telegram://",
+        ]
+
+        if not any(url.startswith(protocol) for protocol in supported_protocols):
+            supported_services = [
+                "HTTP/HTTPS (http://, https://)",
+                "Email (mailto:)",
+                "Slack (slack://)",
+                "Discord (discord://)",
+                "Telegram (tgram://)",
+                "Pushover (pushover://)",
+                "Gotify (gotify://)",
+                "Zulip (zulip://)",
+                "Matrix (matrix://)",
+                "Rocket.Chat (rocketchat://)",
+                "Mattermost (mattermost://)",
+                "Microsoft Teams (teams://)",
+                "Webex (webex://)",
+                "Zoom (zoom://)",
+                "Webhooks (webhook://)",
+                "Generic (generic://)",
+            ]
+            msg = (
+                "Invalid URL format. Must start with a supported protocol. "
+                f"Examples: {', '.join(supported_services[:8])}..."
+            )
+            return False, msg
+
+        return True, "Valid Apprise URL (basic validation)"
+
+
+def add_apprise_url(url: str) -> tuple[bool, str]:
+    """Add an Apprise URL to the list and update .env file."""
+    with apprise_urls_lock:
+        if url in current_apprise_urls:
+            return False, "Apprise URL already exists"
+
+        # Validate the URL
+        is_valid, message = validate_apprise_url(url)
+        if not is_valid:
+            return False, message
+
+        new_list = current_apprise_urls + [url]
+        if update_env_file("APPRISE_URL", new_list):
+            current_apprise_urls.append(url)
+            # Add to the live Apprise object
+            apobj.add(url)
+            logging.info(f"Added Apprise URL: {url}")
+            # Send notification about the addition
+            total_urls = len(current_apprise_urls)
+            msg = f"Apprise URL Added: {url} (Total: {total_urls} URLs)"
+            send_notification(msg, apobj)
+            return True, "Apprise URL added successfully"
+        else:
+            return False, "Failed to update .env file"
+
+
+def remove_apprise_url(url: str) -> tuple[bool, str]:
+    """Remove an Apprise URL from the list and update .env file."""
+    with apprise_urls_lock:
+        if url not in current_apprise_urls:
+            return False, "Apprise URL not found"
+
+        new_list = [u for u in current_apprise_urls if u != url]
+        if update_env_file("APPRISE_URL", new_list):
+            current_apprise_urls.remove(url)
+            # Remove from the live Apprise object by recreating it
+            apobj.clear()
+            for remaining_url in current_apprise_urls:
+                apobj.add(remaining_url)
+            logging.info(f"Removed Apprise URL: {url}")
+            # Send notification about the removal
+            total_urls = len(current_apprise_urls)
+            msg = f"Apprise URL Removed: {url} (Total: {total_urls} URLs)"
+            send_notification(msg, apobj)
+            return True, "Apprise URL removed successfully"
+        else:
+            return False, "Failed to update .env file"
+
+
 # Graceful shutdown (cross-platform compatibility)
 shutdown_event = asyncio.Event()
+
+
+async def cleanup_http_session():
+    """Clean up the shared HTTP session."""
+    global _http_session
+    if _http_session and not _http_session.closed:
+        await _http_session.close()
+        _http_session = None
 
 
 def handle_shutdown_signal():
@@ -281,25 +713,44 @@ async def home():
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta http-equiv="refresh" content="30">
         <style>
+            :root {{
+                --bg-color: #f5f5f5;
+                --container-bg: white;
+                --card-bg: #f8f9fa;
+                --text-color: #333;
+                --text-secondary: #666;
+                --border-color: #dee2e6;
+                --header-border: #007bff;
+                --success-color: #28a745;
+                --danger-color: #dc3545;
+                --warning-color: #ffc107;
+                --info-color: #17a2b8;
+                --shadow: rgba(0,0,0,0.1);
+            }}
+            
             body {{ 
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
                 margin: 10px; 
-                background-color: #f5f5f5;
+                background-color: var(--bg-color);
+                color: var(--text-color);
+                transition: background-color 0.3s, color 0.3s;
             }}
             .container {{ 
                 max-width: 1200px; 
                 margin: 0 auto; 
-                background-color: white; 
+                background-color: var(--container-bg); 
                 padding: 15px; 
                 border-radius: 8px; 
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                box-shadow: 0 2px 4px var(--shadow);
+                transition: background-color 0.3s, box-shadow 0.3s;
             }}
             .header {{ 
                 text-align: center; 
-                color: #333; 
-                border-bottom: 2px solid #007bff; 
+                color: var(--text-color); 
+                border-bottom: 2px solid var(--header-border); 
                 padding-bottom: 10px; 
                 margin-bottom: 20px;
+                position: relative;
             }}
             .status-grid {{ 
                 display: grid; 
@@ -308,30 +759,32 @@ async def home():
                 margin-bottom: 30px;
             }}
             .status-card {{ 
-                background-color: #f8f9fa; 
+                background-color: var(--card-bg); 
                 padding: 15px; 
                 border-radius: 6px; 
-                border-left: 4px solid #28a745;
+                border-left: 4px solid var(--success-color);
+                transition: background-color 0.3s;
             }}
             .status-card h3 {{ 
                 margin: 0 0 10px 0; 
-                color: #333; 
+                color: var(--text-color); 
                 font-size: 1.1em;
             }}
             .status-card p {{
                 margin: 5px 0;
-                color: #666;
+                color: var(--text-secondary);
             }}
             .control-section {{
                 margin: 30px 0;
                 padding: 20px;
-                background-color: #f8f9fa;
+                background-color: var(--card-bg);
                 border-radius: 8px;
                 text-align: center;
+                transition: background-color 0.3s;
             }}
             .control-section h2 {{
                 margin: 0 0 20px 0;
-                color: #495057;
+                color: var(--text-color);
                 font-size: 1.3em;
                 font-weight: 600;
             }}
@@ -343,7 +796,7 @@ async def home():
             }}
             .control-btn {{
                 padding: 8px 16px;
-                background-color: #28a745;
+                background-color: var(--success-color);
                 color: white;
                 border: none;
                 border-radius: 4px;
@@ -362,10 +815,10 @@ async def home():
                 cursor: not-allowed;
             }}
             .stop-btn {{
-                background-color: #dc3545;
+                background-color: var(--danger-color);
             }}
             .restart-btn {{
-                background-color: #ffc107;
+                background-color: var(--warning-color);
                 color: #212529;
             }}
             .btn-icon {{
@@ -379,8 +832,8 @@ async def home():
                 margin-top: 30px;
             }}
             .logs-header {{ 
-                background-color: #343a40; 
-                color: white; 
+                background-color: var(--card-bg); 
+                color: var(--text-color);
                 padding: 10px 15px; 
                 margin: 0; 
                 border-radius: 6px 6px 0 0;
@@ -388,23 +841,24 @@ async def home():
             .logs-container {{ 
                 max-height: 400px; 
                 overflow-y: auto; 
-                border: 1px solid #dee2e6; 
+                border: 1px solid var(--border-color); 
                 border-top: none; 
                 border-radius: 0 0 6px 6px; 
                 padding: 10px;
-                background-color: #ffffff;
+                background-color: var(--container-bg);
             }}
             .refresh-info {{ 
                 text-align: center; 
-                color: #6c757d; 
+                color: var(--text-secondary); 
                 font-size: 0.9em; 
                 margin-top: 20px;
             }}
             .management-section {{ 
                 margin: 30px 0; 
                 padding: 20px; 
-                background-color: #f8f9fa; 
+                background-color: var(--card-bg); 
                 border-radius: 8px;
+                transition: background-color 0.3s;
             }}
             .management-grid {{
                 display: grid;
@@ -412,14 +866,15 @@ async def home():
                 gap: 20px;
             }}
             .management-card {{ 
-                background-color: white; 
+                background-color: var(--container-bg); 
                 padding: 15px; 
                 border-radius: 6px; 
-                border: 1px solid #dee2e6;
+                border: 1px solid var(--border-color);
+                transition: background-color 0.3s, border-color 0.3s;
             }}
             .management-card h3 {{
                 margin: 0 0 15px 0;
-                color: #333;
+                color: var(--text-color);
                 font-size: 1.1em;
             }}
             .collapsible {{
@@ -534,8 +989,8 @@ async def home():
                 <div class="status-card">
                     <h3>📱 Monitoring</h3>
                     <p><strong>TestFlight IDs:</strong> <span id="id-count">{len(ID_LIST)}</span></p>
+                    <p><strong>Apprise URLs:</strong> <span id="url-count">{len(APPRISE_URLS)}</span></p>
                     <p><strong>Check Interval:</strong> {SLEEP_TIME/1000:.1f}s</p>
-                    <p><strong>Notification URLs:</strong> {len(APPRISE_URLS)}</p>
                 </div>
                 
                 <div class="status-card">
@@ -546,14 +1001,51 @@ async def home():
             </div>
             
             <div class="control-section">
-                <h2 style="color: #333; margin-bottom: 15px; text-align: center;">⚙️ Application Control</h2>
+                <h2 style="color: var(--text-color); margin-bottom: 20px; text-align: center;">
+                    ⚙️ Application & Notification Settings
+                </h2>
                 <div class="control-buttons">
-                    <button class="control-btn stop-btn" onclick="stopApplication()">🛑 Stop Application</button>
-                    <button class="control-btn restart-btn" onclick="restartApplication()">🔄 Restart Application</button>
+                    <button class="control-btn stop-btn" onclick="stopApplication()">
+                        🛑 Stop Application
+                    </button>
+                    <button class="control-btn restart-btn" onclick="restartApplication()">
+                        🔄 Restart Application
+                    </button>
+                </div>
+                
+                <div class="management-grid" style="margin-top: 30px;">
+                    <div class="management-card">
+                        <h3 class="collapsible" onclick="toggleCard(this)">Add Apprise URL</h3>
+                        <div class="collapsible-content">
+                            <div style="margin-bottom: 10px;">
+                                <input type="text" id="new-apprise-url" 
+                                       placeholder="Enter Apprise URL (e.g., discord://...)" 
+                                       style="padding: 8px; width: 100%; max-width: 300px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                                <button onclick="validateAndAddUrl()" 
+                                        style="padding: 8px 16px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px; width: 100%; max-width: 150px;">
+                                    Validate & Add
+                                </button>
+                            </div>
+                            <div id="add-url-status" style="margin-top: 10px; min-height: 20px;"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="management-card">
+                        <h3 class="collapsible" onclick="toggleCard(this)">Current Apprise URLs</h3>
+                        <div class="collapsible-content">
+                            <div id="current-urls" style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; padding: 10px; border-radius: 4px; background-color: #f8f9fa;">
+                                Loading...
+                            </div>
+                            <button onclick="refreshUrls()" 
+                                    style="margin-top: 10px; padding: 6px 12px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                🔄 Refresh
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
             
-            <h2 style="color: #333; margin-bottom: 20px;">
+            <h2 style="color: var(--text-color); margin-bottom: 20px;">
                 🔧 TestFlight ID Management
             </h2>
                 
@@ -751,9 +1243,146 @@ async def home():
                 }}
             }}
             
+            async function refreshUrls() {{
+                try {{
+                    const response = await fetch('/api/apprise-urls');
+                    const data = await response.json();
+                    displayUrls(data.apprise_urls);
+                }} catch (error) {{
+                    console.error('Error refreshing URLs:', error);
+                }}
+            }}
+            
+            function displayUrls(urls) {{
+                const container = document.getElementById('current-urls');
+                if (urls.length === 0) {{
+                    container.innerHTML = '<em>No Apprise URLs configured</em>';
+                    return;
+                }}
+                
+                container.innerHTML = urls.map(url => {{
+                    // Extract service type from URL for icon
+                    let icon = '📢';
+                    if (url.includes('discord://')) icon = '💬';
+                    else if (url.includes('slack://')) icon = '💼';
+                    else if (url.includes('telegram://')) icon = '✈️';
+                    else if (url.includes('pushover://')) icon = '📱';
+                    else if (url.includes('gotify://')) icon = '🔔';
+                    else if (url.includes('mailto:')) icon = '📧';
+                    else if (url.includes('http://') || url.includes('https://')) icon = '🌐';
+                    
+                    // Mask sensitive parts of the URL for display
+                    let displayUrl = url;
+                    try {{
+                        const urlObj = new URL(url);
+                        if (urlObj.username || urlObj.password) {{
+                            displayUrl = url.replace(urlObj.username + ':' + urlObj.password, '***:***');
+                        }}
+                        // Hide query parameters for security
+                        displayUrl = displayUrl.split('?')[0];
+                    }} catch (e) {{
+                        // If URL parsing fails, just show a masked version
+                        displayUrl = url.substring(0, 20) + '...';
+                    }}
+                    
+                    return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee;">
+                        <div style="display: flex; align-items: center; flex-grow: 1;">
+                            <span style="font-size: 1.2em; margin-right: 8px;">${{icon}}</span>
+                            <span style="font-family: monospace; font-size: 0.9em;">${{displayUrl}}</span>
+                        </div>
+                        <button onclick="removeUrl('${{encodeURIComponent(url)}}')" 
+                                style="padding: 8px 16px; background-color: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">
+                            ❌ Remove
+                        </button>
+                    </div>`;
+                }}).join('');
+            }}
+            
+            async function validateAndAddUrl() {{
+                const url = document.getElementById('new-apprise-url').value.trim();
+                const statusDiv = document.getElementById('add-url-status');
+                
+                if (!url) {{
+                    statusDiv.innerHTML = '<span style="color: #dc3545;">Please enter an Apprise URL</span>';
+                    return;
+                }}
+                
+                statusDiv.innerHTML = '<span style="color: #007bff;">Validating...</span>';
+                
+                try {{
+                    // First validate
+                    const validateResponse = await fetch('/api/apprise-urls/validate', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ url: url }})
+                    }});
+                    
+                    const validateData = await validateResponse.json();
+                    
+                    if (!validateData.valid) {{
+                        statusDiv.innerHTML = `<span style="color: #dc3545;">${{validateData.message}}</span>`;
+                        return;
+                    }}
+                    
+                    // Show validation success
+                    statusDiv.innerHTML = `<span style="color: #28a745;">${{validateData.message}}</span>`;
+                    
+                    // Add small delay to show the validation result before adding
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    // If valid, add it
+                    statusDiv.innerHTML = '<span style="color: #007bff;">Adding...</span>';
+                    
+                    const addResponse = await fetch('/api/apprise-urls', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ url: url }})
+                    }});
+                    
+                    const addData = await addResponse.json();
+                    
+                    if (addResponse.ok) {{
+                        statusDiv.innerHTML = `<span style="color: #28a745;">${{addData.message}}</span>`;
+                        document.getElementById('new-apprise-url').value = '';
+                        displayUrls(addData.apprise_urls);
+                        document.getElementById('url-count').textContent = addData.apprise_urls.length;
+                    }} else {{
+                        statusDiv.innerHTML = `<span style="color: #dc3545;">${{addData.detail || 'Failed to add URL'}}</span>`;
+                    }}
+                }} catch (error) {{
+                    statusDiv.innerHTML = `<span style="color: #dc3545;">Error: ${{error.message}}</span>`;
+                }}
+            }}
+            
+            async function removeUrl(encodedUrl) {{
+                const url = decodeURIComponent(encodedUrl);
+                if (!confirm(`Are you sure you want to remove this Apprise URL?`)) {{
+                    return;
+                }}
+                
+                try {{
+                    const response = await fetch(`/api/apprise-urls/${{encodedUrl}}`, {{
+                        method: 'DELETE'
+                    }});
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok) {{
+                        displayUrls(data.apprise_urls);
+                        document.getElementById('url-count').textContent = data.apprise_urls.length;
+                        alert(data.message);
+                    }} else {{
+                        alert(`Failed to remove URL: ${{data.detail || 'Unknown error'}}`);
+                    }}
+                }} catch (error) {{
+                    alert(`Error removing URL: ${{error.message}}`);
+                }}
+            }}
+            
             // Load IDs on page load
             document.addEventListener('DOMContentLoaded', function() {{
                 refreshIds();
+                refreshUrls();
                 // Initialize collapsible sections - expand by default
                 document.querySelectorAll('.collapsible-content').forEach(content => {{
                     content.classList.add('expanded');
@@ -838,25 +1467,37 @@ async def home():
     return html_content
 
 
-@app.get("/api/status")
-async def api_status():
-    """API endpoint for status information in JSON format"""
-    uptime = datetime.now() - app_start_time
+@app.get("/api/health")
+async def health_check():
+    """Health check endpoint for monitoring."""
     current_ids = get_current_id_list()
-    with log_entries_lock:
-        log_count = len(log_entries)
+    circuit_breaker_status = {
+        url: failures for url, (failures, _) in _request_failures.items()
+    }
 
     return {
-        "status": "running",
+        "status": "healthy",
         "version": __version__,
-        "uptime_seconds": int(uptime.total_seconds()),
-        "uptime_human": str(uptime).split(".")[0],
+        "uptime_seconds": int((datetime.now() - app_start_time).total_seconds()),
         "monitored_ids": len(current_ids),
-        "check_interval_ms": SLEEP_TIME,
-        "notification_urls": len(APPRISE_URLS),
-        "heartbeat_interval_hours": HEARTBEAT_INTERVAL // 3600,
-        "log_entries_count": log_count,
-        "last_updated": format_datetime(datetime.now()),
+        "cache_stats": {
+            "app_names": len(app_name_cache.cache),
+            "app_icons": len(app_icon_cache.cache),
+        },
+        "circuit_breaker": {
+            "open_circuits": len(
+                [
+                    url
+                    for url in circuit_breaker_status.keys()
+                    if is_circuit_breaker_open(url)
+                ]
+            ),
+            "total_tracked": len(circuit_breaker_status),
+        },
+        "http_session": (
+            "active" if _http_session and not _http_session.closed else "inactive"
+        ),
+        "timestamp": format_datetime(datetime.now()),
     }
 
 
@@ -985,6 +1626,61 @@ async def remove_id(tf_id: str):
     return {"message": message, "testflight_ids": get_current_id_list()}
 
 
+@app.get("/api/apprise-urls")
+async def get_apprise_urls():
+    """Get current list of Apprise URLs."""
+    return {"apprise_urls": get_current_apprise_urls()}
+
+
+@app.post("/api/apprise-urls/validate")
+async def validate_url(request: Request):
+    """Validate an Apprise URL."""
+    data = await request.json()
+    url = data.get("url", "").strip()
+
+    if not url:
+        raise HTTPException(status_code=400, detail="Apprise URL is required")
+
+    is_valid, message = validate_apprise_url(url)
+
+    return {
+        "valid": is_valid,
+        "message": message,
+    }
+
+
+@app.post("/api/apprise-urls")
+async def add_url(request: Request):
+    """Add a new Apprise URL."""
+    data = await request.json()
+    url = data.get("url", "").strip()
+
+    if not url:
+        raise HTTPException(status_code=400, detail="Apprise URL is required")
+
+    # Add to list
+    success, message = add_apprise_url(url)
+    if not success:
+        raise HTTPException(status_code=400, detail=message)
+
+    return {"message": message, "apprise_urls": get_current_apprise_urls()}
+
+
+@app.delete("/api/apprise-urls/{url:path}")
+async def remove_url(url: str):
+    """Remove an Apprise URL."""
+    # URL decode the path parameter since it might contain special characters
+    import urllib.parse
+
+    decoded_url = urllib.parse.unquote(url)
+
+    success, message = remove_apprise_url(decoded_url)
+    if not success:
+        raise HTTPException(status_code=404, detail=message)
+
+    return {"message": message, "apprise_urls": get_current_apprise_urls()}
+
+
 @app.post("/api/control/stop")
 async def stop_application():
     """Stop the application gracefully."""
@@ -1098,9 +1794,9 @@ async def fetch_testflight_status(session, tf_id):
 async def watch():
     """Check all TestFlight links."""
     current_ids = get_current_id_list()
-    async with aiohttp.ClientSession() as session:
-        tasks = [fetch_testflight_status(session, tf_id) for tf_id in current_ids]
-        await asyncio.gather(*tasks)
+    session = await get_http_session()
+    tasks = [fetch_testflight_status(session, tf_id) for tf_id in current_ids]
+    await asyncio.gather(*tasks)
 
 
 async def heartbeat():
@@ -1124,20 +1820,27 @@ async def start_watching():
 
 async def start_fastapi():
     """Start FastAPI server as an async task."""
-    default_host = os.getenv("FASTAPI_HOST", "0.0.0.0")
-    default_port = int(os.getenv("FASTAPI_PORT", random.randint(8000, 9000)))
+    try:
+        default_host = os.getenv("FASTAPI_HOST", "0.0.0.0")
+        default_port = int(os.getenv("FASTAPI_PORT", random.randint(8000, 9000)))
 
-    logging.info(f"Starting FastAPI server on {default_host}:{default_port}")
+        logging.info(f"Starting FastAPI server on {default_host}:{default_port}")
 
-    config = uvicorn.Config(
-        app,
-        host=default_host,
-        port=default_port,
-        log_level="info",
-        access_log=False,  # Disable access logs to prevent console spam
-    )
-    server = uvicorn.Server(config)
-    await server.serve()
+        config = uvicorn.Config(
+            app,
+            host=default_host,
+            port=default_port,
+            log_level="info",
+            access_log=False,  # Disable access logs to prevent console spam
+        )
+        server = uvicorn.Server(config)
+        await server.serve()
+    except asyncio.CancelledError:
+        logging.info("FastAPI server cancelled during shutdown")
+        raise  # Re-raise to be handled by the task system
+    except Exception as e:
+        logging.error(f"Failed to start FastAPI server: {e}")
+        raise
 
 
 def main():
@@ -1155,17 +1858,57 @@ def main():
 
 async def async_main():
     """Run async tasks in the main event loop."""
+    tasks = []
     try:
         logging.info("Starting TestFlight Apprise Notifier v%s", __version__)
         logging.info("All services starting...")
 
-        # Run all tasks concurrently in the same event loop
-        await asyncio.gather(
-            start_watching(), heartbeat(), start_fastapi(), shutdown_event.wait()
-        )
+        # Create tasks
+        watching_task = asyncio.create_task(start_watching())
+        heartbeat_task = asyncio.create_task(heartbeat())
+        fastapi_task = asyncio.create_task(start_fastapi())
+        shutdown_task = asyncio.create_task(shutdown_event.wait())
+
+        tasks = [watching_task, heartbeat_task, fastapi_task, shutdown_task]
+
+        # Wait for any task to complete (shutdown event or error)
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+
+        logging.info("Shutdown initiated, cancelling tasks...")
+
+        # Cancel all pending tasks
+        for task in pending:
+            if not task.done():
+                task.cancel()
+
+        # Wait for all tasks to complete and handle exceptions
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Log any exceptions that occurred during shutdown
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                task_name = (
+                    tasks[i].get_name()
+                    if hasattr(tasks[i], "get_name")
+                    else f"Task-{i+1}"
+                )
+                if isinstance(result, asyncio.CancelledError):
+                    logging.debug(f"{task_name} was cancelled during shutdown")
+                elif isinstance(result, SystemExit) and result.code == 1:
+                    logging.debug(
+                        f"{task_name} (uvicorn) exited normally during shutdown"
+                    )
+                else:
+                    logging.warning(f"{task_name} finished with exception: {result}")
+
     except asyncio.CancelledError:
         logging.info("Async tasks cancelled during shutdown.")
+    except Exception as e:
+        logging.error(f"Error in async main: {e}")
     finally:
+        # Clean up HTTP session
+        await cleanup_http_session()
+        logging.info("HTTP session cleaned up.")
         logging.info("Async main loop has exited.")
 
 

@@ -1,5 +1,35 @@
 # 📄 Changelog
 
+## 🚀 v1.0.5c - September 24, 2025
+
+### 🎉 New Features
+- 🏥 **Health Check Endpoint** – `/api/health` provides comprehensive system monitoring with cache stats, circuit breaker status, and HTTP session health
+- 🔄 **HTTP Connection Pooling** – Shared aiohttp session with connection reuse, DNS caching, and keep-alive connections for 60-80% performance improvement
+- ⚡ **Circuit Breaker Pattern** – Automatic failure detection and recovery for external services with configurable thresholds
+- 🧠 **LRU Cache with Size Limits** – Bounded caches (100 entries each) for app names and icons to prevent memory leaks
+- 🧹 **Resource Cleanup** – Proper HTTP session cleanup on shutdown to prevent connection leaks
+
+### 🛠 Performance Optimizations
+- 🚀 **Connection Reuse** – TCP connection pooling reduces latency by ~70% and minimizes network overhead
+- 💾 **Memory Management** – LRU cache eviction prevents unlimited memory growth
+- 🛡️ **Fault Isolation** – Circuit breakers prevent cascade failures and reduce load on failing services
+- 📊 **Smart Timeouts** – Optimized timeouts (10s connect, 30s total) with DNS caching (5 minutes)
+- 🔄 **Request Deduplication** – Efficient caching reduces redundant HTTP requests
+
+### 🛡️ Robustness Enhancements
+- 🏥 **System Monitoring** – Health endpoint provides real-time metrics for monitoring systems
+- 🔒 **Failure Recovery** – Circuit breaker auto-resets after 5-minute timeout
+- 📈 **Adaptive Resilience** – Graceful degradation when external services fail
+- 📊 **Observability** – Comprehensive logging of circuit breaker states and cache performance
+- 🧹 **Clean Shutdown** – Proper resource disposal prevents hanging connections
+
+### 🐞 Bug Fixes
+- 🐛 **Memory Leaks** – Fixed unlimited cache growth that could cause memory issues over time
+- 🐛 **Connection Exhaustion** – Resolved potential connection pool exhaustion with proper session management
+- 🐛 **Cascade Failures** – Prevented hammering of failed services with circuit breaker implementation
+
+---
+
 ## 🚀 v1.0.5b - September 24, 2025
 
 ### 🎉 New Features

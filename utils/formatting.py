@@ -9,9 +9,31 @@ try:
 except Exception:
     BeautifulSoup = None
 
-# Cache for app names and icons
-app_name_cache = {}
-app_icon_cache = {}
+# Cache for app names and icons with size limits
+from collections import OrderedDict
+
+
+class LRUCache:
+    def __init__(self, max_size=200):
+        self.cache = OrderedDict()
+        self.max_size = max_size
+
+    def get(self, key):
+        if key in self.cache:
+            self.cache.move_to_end(key)
+            return self.cache[key]
+        return None
+
+    def put(self, key, value):
+        if key in self.cache:
+            self.cache.move_to_end(key)
+        self.cache[key] = value
+        if len(self.cache) > self.max_size:
+            self.cache.popitem(last=False)
+
+
+app_name_cache = LRUCache(100)  # Cache up to 100 app names
+app_icon_cache = LRUCache(100)  # Cache up to 100 app icons
 
 DEFAULT_TIMEOUT = 10
 HEADERS = {
@@ -100,8 +122,9 @@ def _normalize_app_name(raw_title: str | None) -> str:
 
 async def get_app_name(base_url: str, tf_id: str) -> str:
     cache_key = f"{base_url}:{tf_id}"
-    if cache_key in app_name_cache:
-        return app_name_cache[cache_key]
+    cached_result = app_name_cache.get(cache_key)
+    if cached_result is not None:
+        return cached_result
 
     url = _safe_join(base_url, tf_id)
     try:
@@ -117,23 +140,24 @@ async def get_app_name(base_url: str, tf_id: str) -> str:
                 # Check for expired/invalid links first
                 if any(phrase in html for phrase in EXPIRED_PHRASES):
                     app_name = "Expired or Invalid Link"
-                    app_name_cache[cache_key] = app_name
+                    app_name_cache.put(cache_key, app_name)
                     return app_name
 
                 # Try multiple sources for app name
                 app_name = _extract_app_name_from_html(html)
-                app_name_cache[cache_key] = app_name
+                app_name_cache.put(cache_key, app_name)
                 return app_name
     except Exception:
         app_name = "UnknownApp"
-        app_name_cache[cache_key] = app_name
+        app_name_cache.put(cache_key, app_name)
         return app_name
 
 
 async def get_app_icon(base_url: str, tf_id: str) -> str:
     cache_key = f"{base_url}:{tf_id}"
-    if cache_key in app_icon_cache:
-        return app_icon_cache[cache_key]
+    cached_result = app_icon_cache.get(cache_key)
+    if cached_result is not None:
+        return cached_result
 
     url = _safe_join(base_url, tf_id)
     try:
@@ -154,13 +178,13 @@ async def get_app_icon(base_url: str, tf_id: str) -> str:
                         # Make absolute if relative
                         if icon_url.startswith("/"):
                             icon_url = f"https://testflight.apple.com{icon_url}"
-                        app_icon_cache[cache_key] = icon_url
+                        app_icon_cache.put(cache_key, icon_url)
                         return icon_url
     except Exception:
         pass
     # Default icon or empty
     icon_url = ""
-    app_icon_cache[cache_key] = icon_url
+    app_icon_cache.put(cache_key, icon_url)
     return icon_url
 
 

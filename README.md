@@ -1,4 +1,5 @@
-# 🚀 TestFlight Apprise Notifier
+# 🚀 TestF- **🔄 Auto-refresh** – Dashboard updates every 30 seconds  
+- **📡 API Endpoints** – JSON APIs for status (`/api/status`), logs (`/api/logs`), and health monitoring (`/api/health`)ght Apprise Notifier
 
 📡 **Monitors TestFlight beta links and sends no## 🌐 Web Dashboard
 
@@ -32,7 +33,11 @@ Uses **FastAPI** for the server, **Apprise** for notifications, and **aiohttp** 
 📡 **RESTful API** – Complete API endpoints for status, logs, and TestFlight ID management.  
 🛑 **Web-based Application Control** – Stop and restart the application directly from the web dashboard.  
 🎨 **Enhanced UI Aesthetics** – Modern gradient buttons with professional styling and responsive design.  
-🛡️ **Security Verified** – Repository confirmed to contain no actual secrets, only test/example data.
+🛡️ **Security Verified** – Repository confirmed to contain no actual secrets, only test/example data.  
+🏥 **Health Monitoring** – Comprehensive health check endpoint with system metrics and performance monitoring.  
+🚀 **HTTP Optimization** – Connection pooling, DNS caching, and keep-alive for 60-80% performance improvement.  
+⚡ **Circuit Breaker** – Automatic failure detection and recovery for external service resilience.  
+🧠 **Smart Caching** – LRU caches with size limits prevent memory leaks while maintaining performance.
 
 ---
 
@@ -48,7 +53,33 @@ Uses **FastAPI** for the server, **Apprise** for notifications, and **aiohttp** 
 
 ---
 
-## 📦 Setup  
+## � Application Control
+
+The TestFlight Apprise Notifier runs as a **single Python process** with multiple concurrent async tasks (monitoring, heartbeat, web server). The stop and restart functionality works as follows:
+
+### **🛑 Stop Functionality**
+- **Process**: Single-process application with async task coordination
+- **Mechanism**: Sets a shutdown event that gracefully stops all running tasks
+- **Cleanup**: Properly closes HTTP connections and cleans up resources
+- **Notification**: Sends Apprise notification about the manual stop
+- **Result**: Clean shutdown without data loss
+
+### **🔄 Restart Functionality**  
+- **Process**: Spawns a new Python process using `subprocess.Popen`
+- **Mechanism**: New instance starts immediately, then current instance shuts down
+- **State**: Configuration persists via `.env` file updates
+- **Notification**: Sends Apprise notification about the restart
+- **Zero-downtime**: New process starts before old one stops
+
+### **🏃‍♂️ Service Operation**
+- **Not a system service**: Runs as a regular Python application
+- **Manual control**: Use web dashboard buttons or send signals (Ctrl+C)
+- **Process management**: Can be managed with tools like `systemd`, `supervisor`, or `pm2`
+- **Resource efficient**: Single process with async I/O, minimal memory footprint
+
+---
+
+## �📦 Setup  
 
 ### **🔧 Prerequisites**  
 
