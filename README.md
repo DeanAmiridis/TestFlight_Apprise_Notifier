@@ -1,4 +1,27 @@
-# 🚀 TestFlight Apprise Notifier  
+# 🚀 Te# 🚀 TestFlight Apprise Notifier
+
+📡 **Monitors TestFlight beta links and sends notifications when a beta becomes available!**
+Uses **FastAPI** for the server, **Apprise** for notifications, and **aiohttp** for asynchronous HTTP requests.
+
+---
+
+## ✨ Features
+
+✅ **TestFlight Monitoring** – Automatically checks TestFlight beta links for availability.  
+🔔 **Notifications** – Sends alerts using Apprise when slots open up, including app icons as attachments for supported services (e.g., Discord, Slack).  
+❤️ **Heartbeat Notifications** – Sends periodic status updates to ensure the bot is active.  
+📜 **Logging** – Uses Python's `logging` module for better log management.  
+🛑 **Graceful Shutdown** – Cleans up resources properly on exit.  
+🔧 **Environment Variable Validation** – Ensures required configurations are set before starting.  
+🎨 **App Name Extraction** – Accurately extracts and displays app names from TestFlight pages.  
+🌐 **Web Dashboard** – FastAPI-powered web interface with real-time status, logs, and monitoring statistics.  
+🔧 **Dynamic ID Management** – Add/remove TestFlight IDs through the web dashboard without restarting the application.  
+📱 **Mobile-Friendly UI** – Responsive design that works perfectly on phones, tablets, and desktops.  
+🎛️ **Interactive Management** – Collapsible cards for organized TestFlight ID management.  
+📡 **RESTful API** – Complete API endpoints for status, logs, and TestFlight ID management.  
+🌐 **Web Dashboard** – FastAPI-powered web interface with real-time status, logs, and monitoring statistics.  
+🔧 **Dynamic ID Management** – Add/remove TestFlight IDs through the web dashboard without restarting the application.  
+📡 **API Endpoints** – RESTful API for status information, log retrieval, and TestFlight ID management.pprise Notifier  
 
 📡 **Monitors TestFlight beta links and sends notifications when a beta becomes available!**  
 Uses **FastAPI** for the server, **Apprise** for notifications, and **aiohttp** for asynchronous HTTP requests.
@@ -14,7 +37,6 @@ Uses **FastAPI** for the server, **Apprise** for notifications, and **aiohttp** 
 🛑 **Graceful Shutdown** – Cleans up resources properly on exit.  
 🔧 **Environment Variable Validation** – Ensures required configurations are set before starting.  
 🎨 **App Name Extraction** – Accurately extracts and displays app names from TestFlight pages.  
-🌐 **Web Dashboard** – Provides a FastAPI server with status endpoint, displaying the actual IP for access.  
 
 ---
 
@@ -61,6 +83,19 @@ The FastAPI server will be accessible via the URL shown in the console, displayi
 
 ---
 
+## 🌐 Web Dashboard  
+
+The web interface provides:  
+- **📊 Real-time Status** – Bot status, version, uptime, and monitoring statistics  
+- **📜 Live Logs** – Recent activity with color-coded log levels and timestamps  
+- **🔧 TestFlight ID Management** – Add/remove monitored apps through the web interface  
+- **� Mobile-Responsive Design** – Optimized for phones, tablets, and desktops  
+- **🎛️ Interactive Cards** – Collapsible sections with clean plus/minus icons  
+- **�🔄 Auto-refresh** – Dashboard updates every 30 seconds  
+- **📡 API Endpoints** – JSON APIs for status (`/api/status`) and logs (`/api/logs`)  
+
+---
+
 ## 🛠 Utility Functions  
 
 🔹 **`utils/notifications.py`** – Handles notifications with error handling and icon attachments.  
@@ -74,10 +109,10 @@ The FastAPI server will be accessible via the URL shown in the console, displayi
 The application logs messages in the console with timestamps and log levels:  
 
 ```plaintext
-2025-04-02 12:00:00 - INFO - Notification sent: Heartbeat - 2025-04-02 12:00:00  
-2025-04-02 12:01:00 - INFO - 200 - abc123 - AppName - Available  
-Notification sent: Slots available for AppName: https://testflight.apple.com/join/abc123  
-2025-04-02 12:01:00 - INFO - Starting FastAPI server on 0.0.0.0:8080 (accessible at http://192.168.1.100:8080)
+2025-09-24 19:00:00 - INFO - Starting TestFlight Apprise Notifier v1.0.5 [v1.0.5]
+2025-09-24 19:00:05 - INFO - Starting FastAPI server on 0.0.0.0:8080
+2025-09-24 19:01:00 - INFO - 200 - My Awesome App - Available for testing!
+2025-09-24 19:01:00 - INFO - Notification sent: Slots available for My Awesome App
 ```
 
 ---
@@ -88,7 +123,7 @@ To confirm the bot is running, it sends a **heartbeat notification every 6 hours
 
 ✅ **Example Heartbeat Message:**  
 ```plaintext
-2025-04-02 18:00:00 - INFO - Notification sent: Heartbeat - 2025-04-02 18:00:00
+Heartbeat - 2025-09-24 19:00:00
 ```
 
 ---

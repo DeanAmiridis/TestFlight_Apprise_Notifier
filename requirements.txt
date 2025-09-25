@@ -1,7 +1,7 @@
-aiohttp
-apprise
-beautifulsoup4
-fastapi
-python-dotenv
-uvicorn
-colorama
+aiohttp>=3.9.0,<4.0.0
+apprise>=1.8.0,<2.0.0
+beautifulsoup4>=4.12.0,<5.0.0
+fastapi>=0.100.0,<1.0.0
+python-dotenv>=1.0.0,<2.0.0
+uvicorn[standard]>=0.23.0,<1.0.0
+colorama>=0.4.0,<1.0.0

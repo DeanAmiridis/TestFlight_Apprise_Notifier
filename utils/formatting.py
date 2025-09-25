@@ -22,6 +22,13 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
+# Expired/invalid link detection phrases
+EXPIRED_PHRASES = [
+    "This beta isn't accepting any new testers",
+    "no longer accepting testers",
+    "Unable to Accept Invite",
+]
+
 
 def _safe_join(base_url: str, tf_id: str) -> str:
     return f"{base_url.rstrip('/')}/{tf_id.lstrip('/')}"
@@ -39,6 +46,31 @@ def _extract_title_html(html: str) -> str | None:
     return None
 
 
+def _extract_app_name_from_html(html: str) -> str:
+    """Extract app name from HTML using multiple strategies."""
+    if BeautifulSoup is not None:
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Try grabbing from <title> with better cleaning
+        title = soup.find("title")
+        if title and title.text:
+            clean_title = (
+                title.text.strip().replace(" - TestFlight", "").replace(" - Apple", "")
+            )
+            invalid_titles = ["testflight", "apple"]
+            if clean_title and clean_title.lower() not in invalid_titles:
+                return clean_title
+
+        # Try grabbing from meta tags
+        meta_title = soup.find("meta", property="og:title")
+        if meta_title and meta_title.get("content"):
+            return meta_title["content"].strip()
+
+    # Fallback to existing logic
+    raw_title = _extract_title_html(html)
+    return _normalize_app_name(raw_title)
+
+
 def _normalize_app_name(raw_title: str | None) -> str:
     if not raw_title:
         return "UnknownApp"
@@ -49,10 +81,20 @@ def _normalize_app_name(raw_title: str | None) -> str:
     # Match "Join the (AppName) beta - TestFlight - Apple"
     m = re.search(r"Join the (.+) beta - TestFlight - Apple", raw_title)
     if m:
-        return m.group(1).strip()
+        app_name = m.group(1).strip()
+        # Don't return generic TestFlight titles
+        invalid_names = ["testflight", "testflight - apple", "apple"]
+        if app_name.lower() not in invalid_names:
+            return app_name
 
     # Fallback: strip " on TestFlight"
     name = re.sub(r"\s+on\s+TestFlight\s*$", "", raw_title, flags=re.IGNORECASE).strip()
+
+    # Check if the result is a generic TestFlight title
+    invalid_names = ["testflight", "testflight - apple", "apple", ""]
+    if name.lower() in invalid_names:
+        return "UnknownApp"
+
     return name or "UnknownApp"
 
 
@@ -71,9 +113,15 @@ async def get_app_name(base_url: str, tf_id: str) -> str:
             ) as resp:
                 resp.raise_for_status()
                 html = await resp.text()
-                # Use title for app name
-                raw_title = _extract_title_html(html)
-                app_name = _normalize_app_name(raw_title)
+
+                # Check for expired/invalid links first
+                if any(phrase in html for phrase in EXPIRED_PHRASES):
+                    app_name = "Expired or Invalid Link"
+                    app_name_cache[cache_key] = app_name
+                    return app_name
+
+                # Try multiple sources for app name
+                app_name = _extract_app_name_from_html(html)
                 app_name_cache[cache_key] = app_name
                 return app_name
     except Exception:

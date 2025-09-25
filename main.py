@@ -10,8 +10,10 @@ import signal
 import random
 import itertools
 from collections import deque
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from datetime import datetime
@@ -21,11 +23,12 @@ from utils.formatting import (
     format_link,
     format_notification_link,
     get_app_icon,
+    get_app_name,
 )
 from utils.colors import print_green
 
 # Version
-__version__ = "1.0.4b"
+__version__ = "1.0.5"
 
 # Load environment variables
 load_dotenv()
@@ -100,6 +103,121 @@ for url in APPRISE_URLS:
     if url:
         apobj.add(url)
 
+# Global variables for dynamic ID management
+id_list_lock = threading.Lock()
+current_id_list = ID_LIST.copy()  # Thread-safe copy for monitoring
+
+
+def get_current_id_list():
+    """Thread-safe function to get current ID list."""
+    with id_list_lock:
+        return current_id_list.copy()
+
+
+def update_env_file(new_id_list):
+    """Safely update the .env file with new ID list."""
+    try:
+        # Read current .env content
+        env_path = ".env"
+        if not os.path.exists(env_path):
+            logging.error("Cannot update .env file: file does not exist")
+            return False
+
+        with open(env_path, "r") as f:
+            lines = f.readlines()
+
+        # Find and update ID_LIST line
+        updated = False
+        for i, line in enumerate(lines):
+            if line.startswith("ID_LIST="):
+                lines[i] = f"ID_LIST={','.join(new_id_list)}\n"
+                updated = True
+                break
+
+        if not updated:
+            # Add ID_LIST if it doesn't exist
+            lines.append(f"ID_LIST={','.join(new_id_list)}\n")
+
+        # Write back to file atomically
+        with open(env_path, "w") as f:
+            f.writelines(lines)
+
+        logging.info(f"Updated .env file with {len(new_id_list)} TestFlight IDs")
+        return True
+    except Exception as e:
+        logging.error(f"Failed to update .env file: {e}")
+        return False
+
+
+async def validate_testflight_id(tf_id):
+    """Validate if a TestFlight ID exists and is accessible."""
+    if not tf_id or not tf_id.strip():
+        return False, "TestFlight ID cannot be empty"
+
+    tf_id = tf_id.strip()
+    testflight_url = format_link(TESTFLIGHT_URL, tf_id)
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                testflight_url, headers={"Accept-Language": "en-us"}
+            ) as response:
+                if response.status == 404:
+                    return False, "TestFlight ID not found (404)"
+                elif response.status != 200:
+                    return False, f"HTTP {response.status} error"
+
+                text = await response.text()
+                soup = BeautifulSoup(text, "html.parser")
+
+                # Check if it's a valid TestFlight page
+                title = soup.find("title")
+                if not title or "TestFlight" not in title.text:
+                    return False, "Not a valid TestFlight page"
+
+                return True, "Valid TestFlight ID"
+    except Exception as e:
+        return False, f"Error validating ID: {str(e)}"
+
+
+def add_testflight_id(tf_id):
+    """Add a TestFlight ID to the list and update .env file."""
+    with id_list_lock:
+        if tf_id in current_id_list:
+            return False, "TestFlight ID already exists"
+
+        new_list = current_id_list + [tf_id]
+        if update_env_file(new_list):
+            current_id_list.append(tf_id)
+            logging.info(f"Added TestFlight ID: {tf_id}")
+            # Send notification about the addition
+            total_ids = len(current_id_list)
+            msg = f"TestFlight ID Added: {tf_id} (Total: {total_ids} IDs)"
+            send_notification(msg, apobj)
+            return True, "TestFlight ID added successfully"
+        else:
+            return False, "Failed to update .env file"
+
+
+def remove_testflight_id(tf_id):
+    """Remove a TestFlight ID from the list and update .env file."""
+    with id_list_lock:
+        if tf_id not in current_id_list:
+            return False, "TestFlight ID not found"
+
+        new_list = [id for id in current_id_list if id != tf_id]
+        if update_env_file(new_list):
+            current_id_list.remove(tf_id)
+            logging.info(f"Removed TestFlight ID: {tf_id}")
+            # Send notification about the removal
+            total_ids = len(current_id_list)
+            msg = f"TestFlight ID Removed: {tf_id} (Total: {total_ids} IDs)"
+            send_notification(msg, apobj)
+            return True, "TestFlight ID removed successfully"
+        else:
+            return False, "Failed to update .env file"
+
+
 # Graceful shutdown (cross-platform compatibility)
 shutdown_event = asyncio.Event()
 
@@ -165,14 +283,14 @@ async def home():
         <style>
             body {{ 
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-                margin: 20px; 
+                margin: 10px; 
                 background-color: #f5f5f5;
             }}
             .container {{ 
                 max-width: 1200px; 
                 margin: 0 auto; 
                 background-color: white; 
-                padding: 20px; 
+                padding: 15px; 
                 border-radius: 8px; 
                 box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             }}
@@ -229,6 +347,94 @@ async def home():
                 font-size: 0.9em; 
                 margin-top: 20px;
             }}
+            .management-section {{ 
+                margin: 30px 0; 
+                padding: 20px; 
+                background-color: #f8f9fa; 
+                border-radius: 8px;
+            }}
+            .management-grid {{
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }}
+            .management-card {{ 
+                background-color: white; 
+                padding: 15px; 
+                border-radius: 6px; 
+                border: 1px solid #dee2e6;
+            }}
+            .management-card h3 {{
+                margin: 0 0 15px 0;
+                color: #333;
+                font-size: 1.1em;
+            }}
+            .collapsible {{
+                cursor: pointer;
+                user-select: none;
+                position: relative;
+                padding-left: 20px;
+            }}
+            .collapsible:hover {{
+                background-color: #f0f0f0;
+            }}
+            .collapsible::before {{
+                content: "+";
+                position: absolute;
+                left: 0;
+                top: 50%;
+                transform: translateY(-50%);
+                color: #666;
+                font-weight: bold;
+                font-size: 1.2em;
+                transition: transform 0.2s ease;
+                margin-right: 5px;
+            }}
+            .collapsible.expanded::before {{
+                content: "−";
+                transform: translateY(-50%);
+            }}
+            .collapsible-content {{
+                display: none;
+                padding-left: 20px;
+            }}
+            .collapsible-content.expanded {{
+                display: block;
+            }}
+            @media (max-width: 768px) {{
+                body {{
+                    margin: 5px;
+                }}
+                .container {{
+                    padding: 10px;
+                }}
+                .status-grid {{
+                    grid-template-columns: 1fr;
+                    gap: 15px;
+                }}
+                .management-section {{
+                    margin: 20px 0;
+                    padding: 15px;
+                }}
+                .logs-container {{
+                    max-height: 300px;
+                }}
+            }}
+            @media (max-width: 480px) {{
+                .header {{
+                    font-size: 1.5em;
+                }}
+                .status-card {{
+                    padding: 12px;
+                }}
+                .management-card {{
+                    padding: 12px;
+                }}
+                .collapsible {{
+                    padding-left: 25px;
+                    font-size: 1em;
+                }}
+            }}
         </style>
     </head>
     <body>
@@ -245,7 +451,7 @@ async def home():
                 
                 <div class="status-card">
                     <h3>📱 Monitoring</h3>
-                    <p><strong>TestFlight IDs:</strong> {len(ID_LIST)}</p>
+                    <p><strong>TestFlight IDs:</strong> <span id="id-count">{len(ID_LIST)}</span></p>
                     <p><strong>Check Interval:</strong> {SLEEP_TIME/1000:.1f}s</p>
                     <p><strong>Notification URLs:</strong> {len(APPRISE_URLS)}</p>
                 </div>
@@ -254,6 +460,42 @@ async def home():
                     <h3>💓 Heartbeat</h3>
                     <p><strong>Interval:</strong> {HEARTBEAT_INTERVAL//3600}h</p>
                     <p><strong>Last Check:</strong> {format_datetime(datetime.now())}</p>
+                </div>
+            </div>
+            
+            <div class="management-section">
+                <h2 style="color: #333; margin-bottom: 20px;">
+                    🔧 TestFlight ID Management
+                </h2>
+                
+                <div class="management-grid">
+                    <div class="management-card">
+                        <h3 class="collapsible" onclick="toggleCard(this)">Add TestFlight ID</h3>
+                        <div class="collapsible-content">
+                            <div style="margin-bottom: 10px;">
+                                <input type="text" id="new-tf-id" placeholder="Enter TestFlight ID" 
+                                       style="padding: 8px; width: 100%; max-width: 250px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                                <button onclick="validateAndAddId()" 
+                                        style="padding: 8px 16px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px; width: 100%; max-width: 150px;">
+                                    Validate & Add
+                                </button>
+                            </div>
+                            <div id="add-status" style="margin-top: 10px; min-height: 20px;"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="management-card">
+                        <h3 class="collapsible" onclick="toggleCard(this)">Current TestFlight IDs</h3>
+                        <div class="collapsible-content">
+                            <div id="current-ids" style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; padding: 10px; border-radius: 4px; background-color: #f8f9fa;">
+                                Loading...
+                            </div>
+                            <button onclick="refreshIds()" 
+                                    style="margin-top: 10px; padding: 6px 12px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                🔄 Refresh
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -268,6 +510,177 @@ async def home():
                 🔄 Page auto-refreshes every 30 seconds | Last updated: {format_datetime(datetime.now())}
             </div>
         </div>
+        
+        <script>
+            function toggleCard(header) {{
+                const content = header.nextElementSibling;
+                const isExpanded = content.classList.contains('expanded');
+                
+                // Toggle the content visibility
+                content.classList.toggle('expanded');
+                
+                // Toggle the arrow rotation
+                header.classList.toggle('expanded');
+                
+                // Optionally collapse other cards when one is expanded
+                if (!isExpanded) {{
+                    // Close other cards
+                    document.querySelectorAll('.collapsible-content.expanded').forEach(otherContent => {{
+                        if (otherContent !== content) {{
+                            otherContent.classList.remove('expanded');
+                            otherContent.previousElementSibling.classList.remove('expanded');
+                        }}
+                    }});
+                }}
+            }}
+            
+            async function refreshIds() {{
+                try {{
+                    const response = await fetch('/api/testflight-ids/details');
+                    const data = await response.json();
+                    displayIds(data.testflight_ids);
+                    document.getElementById('id-count').textContent = data.testflight_ids.length;
+                }} catch (error) {{
+                    console.error('Error refreshing IDs:', error);
+                }}
+            }}
+            
+            function displayIds(ids) {{
+                const container = document.getElementById('current-ids');
+                if (ids.length === 0) {{
+                    container.innerHTML = '<em>No TestFlight IDs configured</em>';
+                    return;
+                }}
+                
+                container.innerHTML = ids.map(item => {{
+                    const displayName = item.display_name || item.id;
+                    const isAppName = item.app_name && item.app_name !== item.id;
+                    const iconHtml = item.icon_url ? 
+                        `<img src="${{item.icon_url}}" style="width: 20px; height: 20px; border-radius: 4px; margin-right: 8px; vertical-align: middle;" alt="App Icon">` : 
+                        '📱 ';
+                    
+                    return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee;">
+                        <div style="display: flex; align-items: center; flex-grow: 1;">
+                            ${{iconHtml}}
+                            <div>
+                                <div style="font-weight: ${{isAppName ? 'bold' : 'normal'}};">${{displayName}}</div>
+                                ${{isAppName ? `<div style="font-size: 0.8em; color: #666;">${{item.id}}</div>` : ''}}
+                            </div>
+                        </div>
+                        <button onclick="removeId('${{item.id}}')" 
+                                style="padding: 4px 8px; background-color: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.8em;">
+                            ❌ Remove
+                        </button>
+                    </div>`;
+                }}).join('');
+            }}
+            
+            async function validateAndAddId() {{
+                const tfId = document.getElementById('new-tf-id').value.trim();
+                const statusDiv = document.getElementById('add-status');
+                
+                if (!tfId) {{
+                    statusDiv.innerHTML = '<span style="color: #dc3545;">Please enter a TestFlight ID</span>';
+                    return;
+                }}
+                
+                statusDiv.innerHTML = '<span style="color: #007bff;">Validating...</span>';
+                
+                try {{
+                    // First validate
+                    const validateResponse = await fetch('/api/testflight-ids/validate', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ id: tfId }})
+                    }});
+                    
+                    const validateData = await validateResponse.json();
+                    
+                    if (!validateData.valid) {{
+                        statusDiv.innerHTML = `<span style="color: #dc3545;">${{validateData.message}}</span>`;
+                        return;
+                    }}
+                    
+                    // Show validation success with app name if available
+                    let validationMessage = 'Valid TestFlight ID';
+                    if (validateData.app_name && validateData.app_name !== tfId) {{
+                        const iconHtml = validateData.icon_url ? 
+                            `<img src="${{validateData.icon_url}}" style="width: 16px; height: 16px; border-radius: 3px; margin-right: 5px; vertical-align: middle;" alt="App Icon">` : 
+                            '📱 ';
+                        validationMessage = `${{iconHtml}}Found: <strong>${{validateData.app_name}}</strong>`;
+                    }}
+                    statusDiv.innerHTML = `<span style="color: #28a745;">${{validationMessage}}</span>`;
+                    
+                    // Add small delay to show the validation result before adding
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    // If valid, add it
+                    statusDiv.innerHTML = '<span style="color: #007bff;">Adding...</span>';
+                    
+                    const addResponse = await fetch('/api/testflight-ids', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ id: tfId }})
+                    }});
+                    
+                    const addData = await addResponse.json();
+                    
+                    if (addResponse.ok) {{
+                        statusDiv.innerHTML = `<span style="color: #28a745;">${{addData.message}}</span>`;
+                        document.getElementById('new-tf-id').value = '';
+                        displayIds(addData.testflight_ids);
+                        document.getElementById('id-count').textContent = addData.testflight_ids.length;
+                    }} else {{
+                        statusDiv.innerHTML = `<span style="color: #dc3545;">${{addData.detail || 'Failed to add ID'}}</span>`;
+                    }}
+                }} catch (error) {{
+                    statusDiv.innerHTML = `<span style="color: #dc3545;">Error: ${{error.message}}</span>`;
+                }}
+            }}
+            
+            async function removeId(tfId) {{
+                if (!confirm(`Are you sure you want to remove TestFlight ID "${{tfId}}"?`)) {{
+                    return;
+                }}
+                
+                try {{
+                    const response = await fetch(`/api/testflight-ids/${{tfId}}`, {{
+                        method: 'DELETE'
+                    }});
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok) {{
+                        displayIds(data.testflight_ids);
+                        document.getElementById('id-count').textContent = data.testflight_ids.length;
+                        alert(data.message);
+                    }} else {{
+                        alert(`Failed to remove ID: ${{data.detail || 'Unknown error'}}`);
+                    }}
+                }} catch (error) {{
+                    alert(`Error removing ID: ${{error.message}}`);
+                }}
+            }}
+            
+            // Load IDs on page load
+            document.addEventListener('DOMContentLoaded', function() {{
+                refreshIds();
+                // Initialize collapsible sections - expand by default
+                document.querySelectorAll('.collapsible-content').forEach(content => {{
+                    content.classList.add('expanded');
+                }});
+                document.querySelectorAll('.collapsible').forEach(header => {{
+                    header.classList.add('expanded');
+                }});
+            }});
+            
+            // Allow Enter key to submit
+            document.getElementById('new-tf-id').addEventListener('keypress', function(e) {{
+                if (e.key === 'Enter') {{
+                    validateAndAddId();
+                }}
+            }});
+        </script>
     </body>
     </html>
     """
@@ -278,6 +691,7 @@ async def home():
 async def api_status():
     """API endpoint for status information in JSON format"""
     uptime = datetime.now() - app_start_time
+    current_ids = get_current_id_list()
     with log_entries_lock:
         log_count = len(log_entries)
 
@@ -286,7 +700,7 @@ async def api_status():
         "version": __version__,
         "uptime_seconds": int(uptime.total_seconds()),
         "uptime_human": str(uptime).split(".")[0],
-        "monitored_ids": len(ID_LIST),
+        "monitored_ids": len(current_ids),
         "check_interval_ms": SLEEP_TIME,
         "notification_urls": len(APPRISE_URLS),
         "heartbeat_interval_hours": HEARTBEAT_INTERVAL // 3600,
@@ -319,6 +733,107 @@ async def api_logs(limit: int = 50):
     }
 
 
+@app.get("/api/testflight-ids")
+async def get_testflight_ids():
+    """Get current list of TestFlight IDs."""
+    return {"testflight_ids": get_current_id_list()}
+
+
+@app.get("/api/testflight-ids/details")
+async def get_testflight_ids_details():
+    """Get detailed information for all TestFlight IDs."""
+    current_ids = get_current_id_list()
+    details = []
+
+    for tf_id in current_ids:
+        try:
+            # Get app name (with caching)
+            app_name = await get_app_name(TESTFLIGHT_URL, tf_id)
+
+            # Get app icon URL (with caching)
+            icon_url = await get_app_icon(TESTFLIGHT_URL, tf_id)
+
+            details.append(
+                {
+                    "id": tf_id,
+                    "app_name": app_name if app_name != tf_id else None,
+                    "display_name": app_name,
+                    "icon_url": icon_url,
+                }
+            )
+        except Exception as e:
+            logging.warning(f"Failed to get details for TestFlight ID {tf_id}: {e}")
+            # Fallback to just the ID
+            details.append(
+                {"id": tf_id, "app_name": None, "display_name": tf_id, "icon_url": None}
+            )
+
+    return {"testflight_ids": details}
+
+
+@app.post("/api/testflight-ids/validate")
+async def validate_id(request: Request):
+    """Validate a TestFlight ID."""
+    data = await request.json()
+    tf_id = data.get("id", "").strip()
+
+    if not tf_id:
+        raise HTTPException(status_code=400, detail="TestFlight ID is required")
+
+    is_valid, message = await validate_testflight_id(tf_id)
+
+    # If valid, also get the app name and icon for display
+    app_name = None
+    icon_url = None
+    if is_valid:
+        try:
+            app_name = await get_app_name(TESTFLIGHT_URL, tf_id)
+            icon_url = await get_app_icon(TESTFLIGHT_URL, tf_id)
+        except Exception as e:
+            logging.warning(
+                f"Failed to get app details during validation for {tf_id}: {e}"
+            )
+
+    return {
+        "valid": is_valid,
+        "message": message,
+        "app_name": app_name,
+        "icon_url": icon_url,
+    }
+
+
+@app.post("/api/testflight-ids")
+async def add_id(request: Request):
+    """Add a new TestFlight ID."""
+    data = await request.json()
+    tf_id = data.get("id", "").strip()
+
+    if not tf_id:
+        raise HTTPException(status_code=400, detail="TestFlight ID is required")
+
+    # Validate first
+    is_valid, message = await validate_testflight_id(tf_id)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=message)
+
+    # Add to list
+    success, message = add_testflight_id(tf_id)
+    if not success:
+        raise HTTPException(status_code=400, detail=message)
+
+    return {"message": message, "testflight_ids": get_current_id_list()}
+
+
+@app.delete("/api/testflight-ids/{tf_id}")
+async def remove_id(tf_id: str):
+    """Remove a TestFlight ID."""
+    success, message = remove_testflight_id(tf_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=message)
+
+    return {"message": message, "testflight_ids": get_current_id_list()}
+
+
 async def fetch_testflight_status(session, tf_id):
     """Fetch and check TestFlight status."""
     testflight_url = format_link(TESTFLIGHT_URL, tf_id)
@@ -340,31 +855,42 @@ async def fetch_testflight_status(session, tf_id):
             status_text = soup.select_one(".beta-status span")
             status_text = status_text.text.strip() if status_text else ""
 
+            # Get app name using the cached function
+            app_name = await get_app_name(TESTFLIGHT_URL, tf_id)
+
             if status_text in [NOT_OPEN_TEXT, FULL_TEXT]:
-                logging.info(f"{response.status} - {tf_id} - {status_text}")
+                logging.info(f"{response.status} - {app_name} - {status_text}")
+
+                # For full or expired apps, send notification with app icon
+                if status_text == FULL_TEXT:
+                    notify_msg = await format_notification_link(TESTFLIGHT_URL, tf_id)
+                    icon_url = await get_app_icon(TESTFLIGHT_URL, tf_id)
+                    # Use stock TestFlight icon if app icon is unavailable
+                    if not icon_url or icon_url == tf_id:
+                        # Stock TestFlight icon URL
+                        base_url = "https://developer.apple.com/assets/elements/icons"
+                        icon_url = f"{base_url}/testflight/testflight-64x64_2x.png"
+                    await send_notification_async(notify_msg, apobj)
+                    logging.info(f"Sent notification for full beta: {app_name}")
                 return
 
-            title_tag = soup.find("title")
-            title = title_tag.text if title_tag else "Unknown"
-            title_match = TITLE_REGEX.search(title)
             notify_msg = await format_notification_link(TESTFLIGHT_URL, tf_id)
             icon_url = await get_app_icon(TESTFLIGHT_URL, tf_id)
-            await send_notification_async(notify_msg, apobj, icon_url)
-            logging.info(
-                f"{response.status} - {tf_id} - {title_match.group(1) if title_match else 'Unknown'} - {status_text}"
-            )
+            await send_notification_async(notify_msg, apobj)
+            logging.info(f"{response.status} - {app_name} - {status_text}")
     except aiohttp.ClientResponseError as e:
-        logging.error(f"HTTP error fetching {tf_id} (URL: {testflight_url}): {e}")
+        logging.error(f"HTTP error fetching {tf_id}: {e}")
     except aiohttp.ClientError as e:
-        logging.error(f"Network error fetching {tf_id} (URL: {testflight_url}): {e}")
+        logging.error(f"Network error fetching {tf_id}: {e}")
     except Exception as e:
-        logging.error(f"Unexpected error fetching {tf_id} (URL: {testflight_url}): {e}")
+        logging.error(f"Unexpected error fetching {tf_id}: {e}")
 
 
 async def watch():
     """Check all TestFlight links."""
+    current_ids = get_current_id_list()
     async with aiohttp.ClientSession() as session:
-        tasks = [fetch_testflight_status(session, tf_id) for tf_id in ID_LIST]
+        tasks = [fetch_testflight_status(session, tf_id) for tf_id in current_ids]
         await asyncio.gather(*tasks)
 
 
