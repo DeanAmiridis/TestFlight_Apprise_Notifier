@@ -28,7 +28,7 @@ from utils.formatting import (
 from utils.colors import print_green
 
 # Version
-__version__ = "1.0.5"
+__version__ = "1.0.5b"
 
 # Load environment variables
 load_dotenv()
@@ -318,9 +318,62 @@ async def home():
                 color: #333; 
                 font-size: 1.1em;
             }}
-            .status-card p {{ 
-                margin: 5px 0; 
+            .status-card p {{
+                margin: 5px 0;
                 color: #666;
+            }}
+            .control-section {{
+                margin: 30px 0;
+                padding: 20px;
+                background-color: #f8f9fa;
+                border-radius: 8px;
+                text-align: center;
+            }}
+            .control-section h2 {{
+                margin: 0 0 20px 0;
+                color: #495057;
+                font-size: 1.3em;
+                font-weight: 600;
+            }}
+            .control-buttons {{
+                display: flex;
+                justify-content: center;
+                gap: 20px;
+                flex-wrap: wrap;
+            }}
+            .control-btn {{
+                padding: 8px 16px;
+                background-color: #28a745;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 1em;
+                font-weight: 600;
+                margin: 0 5px;
+                min-width: 140px;
+                transition: background-color 0.2s;
+            }}
+            .control-btn:hover {{
+                opacity: 0.9;
+            }}
+            .control-btn:disabled {{
+                opacity: 0.6;
+                cursor: not-allowed;
+            }}
+            .stop-btn {{
+                background-color: #dc3545;
+            }}
+            .restart-btn {{
+                background-color: #ffc107;
+                color: #212529;
+            }}
+            .btn-icon {{
+                font-size: 1.2em;
+                display: inline-block;
+            }}
+            .btn-text {{
+                font-weight: 600;
             }}
             .logs-section {{ 
                 margin-top: 30px;
@@ -419,6 +472,18 @@ async def home():
                 .logs-container {{
                     max-height: 300px;
                 }}
+                .control-section {{
+                    padding: 15px;
+                    margin: 20px 0;
+                }}
+                .control-buttons {{
+                    gap: 10px;
+                }}
+                .control-btn {{
+                    min-width: 120px;
+                    padding: 8px 12px;
+                    font-size: 0.9em;
+                }}
             }}
             @media (max-width: 480px) {{
                 .header {{
@@ -433,6 +498,23 @@ async def home():
                 .collapsible {{
                     padding-left: 25px;
                     font-size: 1em;
+                }}
+                .control-section {{
+                    padding: 15px;
+                    margin: 15px 0;
+                }}
+                .control-section h2 {{
+                    font-size: 1.1em;
+                    margin-bottom: 10px;
+                }}
+                .control-buttons {{
+                    flex-direction: column;
+                    gap: 8px;
+                }}
+                .control-btn {{
+                    min-width: 100%;
+                    padding: 10px 16px;
+                    font-size: 0.95em;
                 }}
             }}
         </style>
@@ -463,10 +545,17 @@ async def home():
                 </div>
             </div>
             
-            <div class="management-section">
-                <h2 style="color: #333; margin-bottom: 20px;">
-                    🔧 TestFlight ID Management
-                </h2>
+            <div class="control-section">
+                <h2 style="color: #333; margin-bottom: 15px; text-align: center;">⚙️ Application Control</h2>
+                <div class="control-buttons">
+                    <button class="control-btn stop-btn" onclick="stopApplication()">🛑 Stop Application</button>
+                    <button class="control-btn restart-btn" onclick="restartApplication()">🔄 Restart Application</button>
+                </div>
+            </div>
+            
+            <h2 style="color: #333; margin-bottom: 20px;">
+                🔧 TestFlight ID Management
+            </h2>
                 
                 <div class="management-grid">
                     <div class="management-card">
@@ -568,7 +657,7 @@ async def home():
                             </div>
                         </div>
                         <button onclick="removeId('${{item.id}}')" 
-                                style="padding: 4px 8px; background-color: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.8em;">
+                                style="padding: 8px 16px; background-color: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">
                             ❌ Remove
                         </button>
                     </div>`;
@@ -680,6 +769,68 @@ async def home():
                     validateAndAddId();
                 }}
             }});
+            
+            async function stopApplication() {{
+                if (!confirm('Are you sure you want to stop the TestFlight Apprise Notifier? This will shut down the application.')) {{
+                    return;
+                }}
+                
+                try {{
+                    const response = await fetch('/api/control/stop', {{
+                        method: 'POST'
+                    }});
+                    
+                    if (response.ok) {{
+                        alert('Application is shutting down...');
+                        // Disable buttons
+                        document.querySelector('.stop-btn').disabled = true;
+                        document.querySelector('.restart-btn').disabled = true;
+                        // Show shutdown message
+                        document.querySelector('.container').innerHTML = `
+                            <div style="text-align: center; padding: 50px;">
+                                <h2>🛑 Application Stopped</h2>
+                                <p>The TestFlight Apprise Notifier has been shut down.</p>
+                                <p>To restart, run the application again from the command line.</p>
+                            </div>
+                        `;
+                    }} else {{
+                        alert('Failed to stop application');
+                    }}
+                }} catch (error) {{
+                    alert('Error stopping application: ' + error.message);
+                }}
+            }}
+            
+            async function restartApplication() {{
+                if (!confirm('Are you sure you want to restart the TestFlight Apprise Notifier? This will reload the application with any code changes.')) {{
+                    return;
+                }}
+                
+                try {{
+                    const response = await fetch('/api/control/restart', {{
+                        method: 'POST'
+                    }});
+                    
+                    if (response.ok) {{
+                        alert('Application is restarting...');
+                        // Disable buttons
+                        document.querySelector('.stop-btn').disabled = true;
+                        document.querySelector('.restart-btn').disabled = true;
+                        // Show restart message
+                        document.querySelector('.container').innerHTML = `
+                            <div style="text-align: center; padding: 50px;">
+                                <h2>🔄 Application Restarting</h2>
+                                <p>The TestFlight Apprise Notifier is restarting...</p>
+                                <p>Please wait a moment and refresh the page.</p>
+                            </div>
+                        `;
+                    }} else {{
+                        alert('Failed to restart application');
+                    }}
+                }} catch (error) {{
+                    alert('Error restarting application: ' + error.message);
+                }}
+            }}
         </script>
     </body>
     </html>
@@ -832,6 +983,64 @@ async def remove_id(tf_id: str):
         raise HTTPException(status_code=404, detail=message)
 
     return {"message": message, "testflight_ids": get_current_id_list()}
+
+
+@app.post("/api/control/stop")
+async def stop_application():
+    """Stop the application gracefully."""
+    logging.info("Stop command received via web interface")
+    # Send notification about the stop
+    try:
+        msg = "🛑 TestFlight Apprise Notifier stopped via web interface"
+        send_notification(msg, apobj)
+    except Exception:
+        pass  # Ignore notification errors during shutdown
+
+    # Trigger graceful shutdown
+    handle_shutdown_signal()
+    return {"message": "Application is shutting down..."}
+
+
+@app.post("/api/control/restart")
+async def restart_application():
+    """Restart the application."""
+    logging.info("Restart command received via web interface")
+
+    # Send notification about the restart
+    try:
+        msg = "🔄 TestFlight Apprise Notifier restarting via web interface"
+        send_notification(msg, apobj)
+    except Exception:
+        pass  # Ignore notification errors during restart
+
+    # Get the current Python executable and script path
+    import sys
+    import subprocess
+    import os
+
+    python_executable = sys.executable
+    script_path = os.path.abspath(sys.argv[0])
+
+    try:
+        # Start a new instance of the application
+        subprocess.Popen(
+            [python_executable, script_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+        logging.info("New application instance started, shutting down current instance")
+
+        # Trigger graceful shutdown of current instance
+        handle_shutdown_signal()
+
+        return {"message": "Application is restarting..."}
+
+    except Exception as e:
+        logging.error(f"Failed to restart application: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to restart: {str(e)}")
 
 
 async def fetch_testflight_status(session, tf_id):

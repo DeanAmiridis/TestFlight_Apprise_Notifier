@@ -1,5 +1,28 @@
 # 📄 Changelog
 
+## 🚀 v1.0.5b - September 24, 2025
+
+### 🎉 New Features
+- 🛑 **Web-based Application Control** – Stop and restart the application directly from the web dashboard
+- 🔄 **Application Restart Functionality** – Graceful restart with subprocess management for code updates
+- 🎨 **Enhanced Control Button UI** – Beautiful gradient buttons with hover effects and responsive design
+- 🛡️ **Security Verification** – Repository confirmed to contain no actual secrets, only test/example data
+- ⚙️ **Dedicated Control Section** – Professional application control interface with confirmation dialogs
+
+### 🛠 Improvements
+- 🎨 **Aesthetic Button Design** – Modern gradient backgrounds, shadows, and smooth animations
+- 📱 **Responsive Control Interface** – Optimized button layout for desktop, tablet, and mobile devices
+- 🔒 **Enhanced Error Handling** – Fixed bare `except:` clauses with proper exception types
+- 🔔 **Control Notifications** – Apprise notifications sent when application is stopped or restarted
+- 🎯 **Visual Hierarchy** – Dedicated "Application Control" section with proper spacing and styling
+
+### 🐞 Bug Fixes
+- 🐛 **Exception Handling** – Replaced bare `except:` clauses with specific `Exception` types
+- 🐛 **UI Layout Issues** – Fixed control buttons causing layout shifts by moving them outside grid containers
+- 🐛 **Button Responsiveness** – Improved button styling and positioning across all screen sizes
+
+---
+
 ## 🚀 v1.0.5 - September 24, 2025
 
 ### 🎉 New Features

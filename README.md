@@ -1,6 +1,17 @@
-# 🚀 Te# 🚀 TestFlight Apprise Notifier
+# 🚀 TestFlight Apprise Notifier
 
-📡 **Monitors TestFlight beta links and sends notifications when a beta becomes available!**
+📡 **Monitors TestFlight beta links and sends no## 🌐 Web Dashboard
+
+The web interface provides:
+- **📊 Real-time Status** – Bot status, version, uptime, and monitoring statistics
+- **📜 Live Logs** – Recent activity with color-coded log levels and timestamps
+- **🔧 TestFlight ID Management** – Add/remove monitored apps through the web interface
+- **📱 Mobile-Responsive Design** – Optimized for phones, tablets, and desktops
+- **🎛️ Interactive Cards** – Collapsible sections with clean plus/minus icons
+- **🔄 Auto-refresh** – Dashboard updates every 30 seconds
+- **📡 API Endpoints** – JSON APIs for status (`/api/status`) and logs (`/api/logs`)
+- **🛑 Application Control** – Stop and restart the application directly from the web interface
+- **🎨 Enhanced UI** – Modern gradient buttons with professional styling and animationss when a beta becomes available!**
 Uses **FastAPI** for the server, **Apprise** for notifications, and **aiohttp** for asynchronous HTTP requests.
 
 ---
@@ -19,12 +30,9 @@ Uses **FastAPI** for the server, **Apprise** for notifications, and **aiohttp** 
 📱 **Mobile-Friendly UI** – Responsive design that works perfectly on phones, tablets, and desktops.  
 🎛️ **Interactive Management** – Collapsible cards for organized TestFlight ID management.  
 📡 **RESTful API** – Complete API endpoints for status, logs, and TestFlight ID management.  
-🌐 **Web Dashboard** – FastAPI-powered web interface with real-time status, logs, and monitoring statistics.  
-🔧 **Dynamic ID Management** – Add/remove TestFlight IDs through the web dashboard without restarting the application.  
-📡 **API Endpoints** – RESTful API for status information, log retrieval, and TestFlight ID management.pprise Notifier  
-
-📡 **Monitors TestFlight beta links and sends notifications when a beta becomes available!**  
-Uses **FastAPI** for the server, **Apprise** for notifications, and **aiohttp** for asynchronous HTTP requests.
+🛑 **Web-based Application Control** – Stop and restart the application directly from the web dashboard.  
+🎨 **Enhanced UI Aesthetics** – Modern gradient buttons with professional styling and responsive design.  
+🛡️ **Security Verified** – Repository confirmed to contain no actual secrets, only test/example data.
 
 ---
 
@@ -109,7 +117,7 @@ The web interface provides:
 The application logs messages in the console with timestamps and log levels:  
 
 ```plaintext
-2025-09-24 19:00:00 - INFO - Starting TestFlight Apprise Notifier v1.0.5 [v1.0.5]
+2025-09-24 19:00:00 - INFO - Starting TestFlight Apprise Notifier v1.0.5b [v1.0.5b]
 2025-09-24 19:00:05 - INFO - Starting FastAPI server on 0.0.0.0:8080
 2025-09-24 19:01:00 - INFO - 200 - My Awesome App - Available for testing!
 2025-09-24 19:01:00 - INFO - Notification sent: Slots available for My Awesome App
