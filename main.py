@@ -29,10 +29,110 @@ from utils.formatting import (
     app_icon_cache,
 )
 from utils.colors import print_green
+from utils.testflight import (
+    check_testflight_status,
+    TestFlightStatus,
+    is_status_available,
+    enable_status_cache,
+)
+
+# Enable status caching with 5-minute TTL for improved performance
+enable_status_cache(ttl_seconds=300)
 
 # Circuit breaker for external requests
 _request_failures = {}
 _circuit_breaker_threshold = 5
+_circuit_breaker_timeout = 300  # 5 minutes
+
+# Global HTTP session and lock
+_http_session = None
+_session_lock = threading.Lock()
+
+# Status tracking for change notifications
+_previous_status = {}  # tf_id -> TestFlightStatus
+_status_lock = threading.Lock()
+
+
+class MetricsCollector:
+    """
+    Collect and track metrics for TestFlight status checks.
+
+    Tracks total checks, successes, failures, and status counts.
+    """
+
+    def __init__(self):
+        """Initialize metrics collector."""
+        self.total_checks = 0
+        self.successful_checks = 0
+        self.failed_checks = 0
+        self.status_counts = {
+            "open": 0,
+            "full": 0,
+            "closed": 0,
+            "unknown": 0,
+            "error": 0,
+        }
+        self.start_time = time.time()
+        self._lock = threading.Lock()
+
+    def record_check(self, status: TestFlightStatus, success: bool = True):
+        """
+        Record a status check.
+
+        Args:
+            status: The TestFlightStatus result
+            success: Whether the check was successful
+        """
+        with self._lock:
+            self.total_checks += 1
+            if success:
+                self.successful_checks += 1
+                status_key = status.value.lower()
+                if status_key in self.status_counts:
+                    self.status_counts[status_key] += 1
+            else:
+                self.failed_checks += 1
+                self.status_counts["error"] += 1
+
+    def get_stats(self):
+        """
+        Get current statistics.
+
+        Returns:
+            dict: Statistics dictionary with all metrics
+        """
+        with self._lock:
+            uptime = time.time() - self.start_time
+            return {
+                "total_checks": self.total_checks,
+                "successful_checks": self.successful_checks,
+                "failed_checks": self.failed_checks,
+                "status_counts": self.status_counts.copy(),
+                "uptime_seconds": uptime,
+                "checks_per_minute": (
+                    (self.total_checks / uptime * 60) if uptime > 0 else 0
+                ),
+            }
+
+    def reset(self):
+        """Reset all metrics."""
+        with self._lock:
+            self.total_checks = 0
+            self.successful_checks = 0
+            self.failed_checks = 0
+            self.status_counts = {
+                "open": 0,
+                "full": 0,
+                "closed": 0,
+                "unknown": 0,
+                "error": 0,
+            }
+            self.start_time = time.time()
+
+
+# Global metrics collector
+_metrics = MetricsCollector()
+
 _circuit_breaker_timeout = 300  # 5 minutes
 
 # Global HTTP session and lock
@@ -101,7 +201,7 @@ async def get_http_session() -> aiohttp.ClientSession:
 
 
 # Version
-__version__ = "1.0.5c"
+__version__ = "1.0.5d"
 
 
 def get_multiline_env_value(key: str) -> str:
@@ -297,10 +397,38 @@ def update_env_file(key: str, new_values: list[str]):
         return False
 
 
-async def validate_testflight_id(tf_id):
-    """Validate if a TestFlight ID exists and is accessible."""
+def validate_testflight_id_format(tf_id):
+    """
+    Validate TestFlight ID format.
+
+    Args:
+        tf_id: The TestFlight ID to validate
+
+    Returns:
+        tuple: (is_valid, message)
+    """
     if not tf_id or not tf_id.strip():
         return False, "TestFlight ID cannot be empty"
+
+    tf_id = tf_id.strip()
+
+    # TestFlight IDs are typically 8-12 alphanumeric characters
+    import re
+
+    if not re.match(r"^[a-zA-Z0-9]{8,12}$", tf_id):
+        return False, (
+            "Invalid TestFlight ID format. " "ID must be 8-12 alphanumeric characters"
+        )
+
+    return True, "Valid format"
+
+
+async def validate_testflight_id(tf_id):
+    """Validate if a TestFlight ID exists and is accessible."""
+    # First check format
+    is_valid_format, format_message = validate_testflight_id_format(tf_id)
+    if not is_valid_format:
+        return False, format_message
 
     tf_id = tf_id.strip()
     testflight_url = format_link(TESTFLIGHT_URL, tf_id)
@@ -1501,6 +1629,21 @@ async def health_check():
     }
 
 
+@app.get("/api/metrics")
+async def get_metrics():
+    """Get metrics and statistics for TestFlight checks."""
+    stats = _metrics.get_stats()
+    return {
+        "total_checks": stats["total_checks"],
+        "successful_checks": stats["successful_checks"],
+        "failed_checks": stats["failed_checks"],
+        "status_counts": stats["status_counts"],
+        "uptime_seconds": stats["uptime_seconds"],
+        "checks_per_minute": round(stats["checks_per_minute"], 2),
+        "timestamp": format_datetime(datetime.now()),
+    }
+
+
 @app.get("/api/logs")
 async def api_logs(limit: int = 50):
     """API endpoint for recent logs in JSON format with input validation"""
@@ -1626,6 +1769,80 @@ async def remove_id(tf_id: str):
     return {"message": message, "testflight_ids": get_current_id_list()}
 
 
+@app.post("/api/testflight-ids/batch")
+async def batch_operations(request: Request):
+    """
+    Perform batch operations on TestFlight IDs.
+
+    Accepts JSON with:
+    {
+        "add": ["id1", "id2", ...],
+        "remove": ["id3", "id4", ...]
+    }
+
+    Returns:
+    {
+        "added": {"successful": [...], "failed": [...]},
+        "removed": {"successful": [...], "failed": [...]},
+        "testflight_ids": [...]
+    }
+    """
+    data = await request.json()
+    ids_to_add = data.get("add", [])
+    ids_to_remove = data.get("remove", [])
+
+    result = {
+        "added": {"successful": [], "failed": []},
+        "removed": {"successful": [], "failed": []},
+    }
+
+    # Process additions
+    for tf_id in ids_to_add:
+        tf_id = tf_id.strip()
+        if not tf_id:
+            result["added"]["failed"].append(
+                {"id": tf_id, "error": "ID cannot be empty"}
+            )
+            continue
+
+        try:
+            # Validate ID
+            is_valid, message = await validate_testflight_id(tf_id)
+            if not is_valid:
+                result["added"]["failed"].append({"id": tf_id, "error": message})
+                continue
+
+            # Add to list
+            success, message = add_testflight_id(tf_id)
+            if success:
+                result["added"]["successful"].append(tf_id)
+            else:
+                result["added"]["failed"].append({"id": tf_id, "error": message})
+        except Exception as e:
+            result["added"]["failed"].append({"id": tf_id, "error": str(e)})
+
+    # Process removals
+    for tf_id in ids_to_remove:
+        tf_id = tf_id.strip()
+        if not tf_id:
+            result["removed"]["failed"].append(
+                {"id": tf_id, "error": "ID cannot be empty"}
+            )
+            continue
+
+        try:
+            success, message = remove_testflight_id(tf_id)
+            if success:
+                result["removed"]["successful"].append(tf_id)
+            else:
+                result["removed"]["failed"].append({"id": tf_id, "error": message})
+        except Exception as e:
+            result["removed"]["failed"].append({"id": tf_id, "error": str(e)})
+
+    result["testflight_ids"] = get_current_id_list()
+    return result
+
+
 @app.get("/api/apprise-urls")
 async def get_apprise_urls():
     """Get current list of Apprise URLs."""
@@ -1740,54 +1957,81 @@ async def restart_application():
 
 
 async def fetch_testflight_status(session, tf_id):
-    """Fetch and check TestFlight status."""
+    """Fetch and check TestFlight status using enhanced utility."""
     testflight_url = format_link(TESTFLIGHT_URL, tf_id)
+
     try:
-        async with session.get(
-            testflight_url, headers={"Accept-Language": "en-us"}
-        ) as response:
-            if response.status != 200:
-                logging.warning(
-                    "%s - %s - Not Found. URL: %s",
-                    response.status,
-                    tf_id,
-                    testflight_url,
-                )
-                return
+        # Use the enhanced status checker utility
+        result = await check_testflight_status(session, testflight_url)
 
-            text = await response.text()
-            soup = BeautifulSoup(text, "html.parser")
-            status_text = soup.select_one(".beta-status span")
-            status_text = status_text.text.strip() if status_text else ""
+        # Record metrics
+        _metrics.record_check(result["status"], success=True)
 
-            # Get app name using the cached function
+        # Handle errors
+        if result["status"] == TestFlightStatus.ERROR:
+            logging.warning(
+                "%s - %s - Error: %s",
+                result.get("status_text", "Unknown"),
+                tf_id,
+                result.get("error", "Unknown error"),
+            )
+            return
+
+        # Get app name from result or use cached function
+        app_name = result.get("app_name")
+        if not app_name:
             app_name = await get_app_name(TESTFLIGHT_URL, tf_id)
 
-            if status_text in [NOT_OPEN_TEXT, FULL_TEXT]:
-                logging.info(f"{response.status} - {app_name} - {status_text}")
+        # Get current and previous status
+        current_status = result["status"]
+        with _status_lock:
+            previous_status = _previous_status.get(tf_id)
+            _previous_status[tf_id] = current_status
 
-                # For full or expired apps, send notification with app icon
-                if status_text == FULL_TEXT:
-                    notify_msg = await format_notification_link(TESTFLIGHT_URL, tf_id)
-                    icon_url = await get_app_icon(TESTFLIGHT_URL, tf_id)
-                    # Use stock TestFlight icon if app icon is unavailable
-                    if not icon_url or icon_url == tf_id:
-                        # Stock TestFlight icon URL
-                        base_url = "https://developer.apple.com/assets/elements/icons"
-                        icon_url = f"{base_url}/testflight/testflight-64x64_2x.png"
-                    await send_notification_async(notify_msg, apobj)
-                    logging.info(f"Sent notification for full beta: {app_name}")
-                return
+        # Determine if we should notify
+        should_notify = False
+        status_changed = previous_status != current_status
 
+        # Handle different status types
+        if result["status"] == TestFlightStatus.FULL:
+            logging.info(f"200 - {app_name} - Beta is full")
+            # Only notify on status change to FULL (optional behavior)
+            if status_changed and previous_status == TestFlightStatus.OPEN:
+                should_notify = True
+
+        elif result["status"] == TestFlightStatus.CLOSED:
+            logging.info(f"200 - {app_name} - Beta is closed")
+            # Don't notify for closed status
+
+        elif result["status"] == TestFlightStatus.OPEN:
+            # Beta is open - notify only if status changed or first check
+            if previous_status is None or previous_status != TestFlightStatus.OPEN:
+                should_notify = True
+                logging.info(
+                    f"200 - {app_name} - Beta is OPEN! "
+                    f"(changed from {previous_status.value if previous_status else 'unknown'})"
+                )
+            else:
+                logging.info(f"200 - {app_name} - Beta is still open (no notification)")
+
+        else:
+            # Unknown status - log for investigation
+            raw_text = result.get("raw_text", "N/A")[:50]
+            logging.info(f"200 - {app_name} - Unknown status: {raw_text}")
+
+        # Send notification if status changed to something noteworthy
+        if should_notify:
             notify_msg = await format_notification_link(TESTFLIGHT_URL, tf_id)
             icon_url = await get_app_icon(TESTFLIGHT_URL, tf_id)
-            await send_notification_async(notify_msg, apobj)
-            logging.info(f"{response.status} - {app_name} - {status_text}")
-    except aiohttp.ClientResponseError as e:
-        logging.error(f"HTTP error fetching {tf_id}: {e}")
-    except aiohttp.ClientError as e:
-        logging.error(f"Network error fetching {tf_id}: {e}")
+            # Use stock TestFlight icon if app icon is unavailable
+            if not icon_url or icon_url == tf_id:
+                base_url = "https://developer.apple.com/assets/elements/icons"
+                icon_url = f"{base_url}/testflight/testflight-64x64_2x.png"
+            await send_notification_async(notify_msg, apobj, icon_url)
+            logging.info(f"Notification sent for {app_name}")
+
     except Exception as e:
+        _metrics.record_check(TestFlightStatus.ERROR, success=False)
         logging.error(f"Unexpected error fetching {tf_id}: {e}")
 
 

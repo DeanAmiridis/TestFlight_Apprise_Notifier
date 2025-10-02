@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  testflight-notifier:
+    build: .
+    container_name: testflight-notifier
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      # Override .env settings if needed
+      - FASTAPI_HOST=0.0.0.0
+      - FASTAPI_PORT=8080
+      - TZ=America/New_York  # Set your timezone
+    volumes:
+      # Optional: Mount .env file from host
+      - ./.env:/app/.env:ro
+      # Optional: Persistent data directory
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

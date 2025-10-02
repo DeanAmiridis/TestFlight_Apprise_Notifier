@@ -1,0 +1,48 @@
+# Docker ignore file
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation (optional - uncomment if you don't want docs in the image)
+# *.md
+# CHANGELOG.md
+# ENHANCEMENTS.md
+# INTEGRATION.md
+
+# Test files (if you have them)
+tests/
+test_*.py
+*_test.py
