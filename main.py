@@ -11,6 +11,7 @@ import random
 import itertools
 import time
 from collections import deque
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -805,8 +806,31 @@ if os.name != "nt":
                 f"Signal handling is not implemented for {sig} on this platform."
             )
 
+
+# FastAPI lifespan context manager for proper startup/shutdown handling
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Manage FastAPI application lifespan.
+    
+    Handles startup and shutdown events gracefully, including proper
+    exception handling for cancellation during shutdown/restart.
+    """
+    # Startup
+    logging.info("FastAPI application starting up...")
+    try:
+        yield
+    except asyncio.CancelledError:
+        # This is expected during graceful shutdown/restart
+        logging.info("FastAPI lifespan cancelled during shutdown/restart")
+    finally:
+        # Shutdown
+        logging.info("FastAPI application shutting down...")
+        await cleanup_http_session()
+
+
 # FastAPI server
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -2086,7 +2110,8 @@ async def start_watching():
 
 
 async def start_fastapi():
-    """Start FastAPI server as an async task."""
+    """Start FastAPI server as an async task with graceful shutdown handling."""
+    server = None
     try:
         default_host = os.getenv("FASTAPI_HOST", "0.0.0.0")
         default_port = int(os.getenv("FASTAPI_PORT", random.randint(8000, 9000)))
@@ -2099,12 +2124,28 @@ async def start_fastapi():
             port=default_port,
             log_level="info",
             access_log=False,  # Disable access logs to prevent console spam
+            log_config=None,  # Prevent uvicorn from reconfiguring logging
         )
         server = uvicorn.Server(config)
-        await server.serve()
+        
+        # Install a custom signal handler to suppress CancelledError traceback
+        async def serve_with_cancellation_handling():
+            try:
+                await server.serve()
+            except asyncio.CancelledError:
+                # Expected during shutdown/restart - don't log as error
+                logging.debug("Server serve() cancelled - shutting down gracefully")
+                raise
+        
+        await serve_with_cancellation_handling()
+        
     except asyncio.CancelledError:
-        logging.info("FastAPI server cancelled during shutdown")
-        raise  # Re-raise to be handled by the task system
+        logging.info("FastAPI server cancelled during shutdown/restart")
+        # Initiate graceful shutdown if server was created
+        if server:
+            logging.debug("Initiating uvicorn server shutdown...")
+            server.should_exit = True
+        raise  # Re-raise to signal proper cancellation
     except Exception as e:
         logging.error(f"Failed to start FastAPI server: {e}")
         raise
