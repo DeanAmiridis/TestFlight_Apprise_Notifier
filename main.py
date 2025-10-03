@@ -278,7 +278,9 @@ apprise_urls_raw = [
 
 # Heartbeat interval (default: 6 hours)
 # Can be configured via HEARTBEAT_INTERVAL environment variable (in hours)
-HEARTBEAT_INTERVAL = int(os.getenv("HEARTBEAT_INTERVAL", "6")) * 60 * 60  # Convert hours to seconds
+HEARTBEAT_INTERVAL = (
+    int(os.getenv("HEARTBEAT_INTERVAL", "6")) * 60 * 60
+)  # Convert hours to seconds
 
 # Configure logging
 format_str = f"%(asctime)s - %(levelname)s - %(message)s [v{__version__}]"
@@ -320,11 +322,32 @@ web_handler = WebLogHandler()
 logging.getLogger().addHandler(web_handler)
 
 
+def ensure_web_handler_attached():
+    """
+    Ensure WebLogHandler is attached to all relevant loggers.
+    This is called after uvicorn initializes to make sure our handler
+    captures all logs including uvicorn logs.
+    """
+    # Get the web handler (it should already exist)
+    loggers_to_patch = [
+        logging.getLogger(),  # Root logger
+        logging.getLogger("uvicorn"),
+        logging.getLogger("uvicorn.error"),
+        logging.getLogger("uvicorn.access"),
+    ]
+
+    for logger in loggers_to_patch:
+        # Check if web handler is already attached
+        if web_handler not in logger.handlers:
+            logger.addHandler(web_handler)
+            logging.debug(f"Attached WebLogHandler to {logger.name or 'root'}")
+
+
 # Custom uvicorn log config that preserves our formatting
 def get_uvicorn_log_config():
     """
     Create a uvicorn log config that uses our existing logging setup.
-    
+
     This prevents uvicorn from reconfiguring logging while still allowing
     it to log properly through our configured handlers.
     """
@@ -344,9 +367,17 @@ def get_uvicorn_log_config():
             },
         },
         "loggers": {
-            "uvicorn": {"handlers": ["default"], "level": "INFO", "propagate": False},
-            "uvicorn.error": {"level": "INFO", "propagate": False},
-            "uvicorn.access": {"handlers": ["default"], "level": "INFO", "propagate": False},
+            "uvicorn": {"handlers": ["default"], "level": "INFO", "propagate": True},
+            "uvicorn.error": {"level": "INFO", "propagate": True},
+            "uvicorn.access": {
+                "handlers": ["default"],
+                "level": "INFO",
+                "propagate": True,
+            },
+        },
+        "root": {
+            "level": "INFO",
+            "handlers": ["default"],
         },
     }
 
@@ -413,7 +444,7 @@ def update_env_file(key: str, new_values: list[str]):
             if line.startswith(f"{key}="):
                 # Found the key, remove this line and all continuation lines
                 lines.pop(i)
-                
+
                 # Remove continuation lines (lines that don't start with a key)
                 while i < len(lines):
                     next_line = lines[i].strip()
@@ -422,7 +453,7 @@ def update_env_file(key: str, new_values: list[str]):
                         break
                     # This is a continuation line, remove it
                     lines.pop(i)
-                
+
                 # Insert new values at this position
                 if new_values:
                     # Write first value on the key line
@@ -433,7 +464,7 @@ def update_env_file(key: str, new_values: list[str]):
                 else:
                     # Empty value
                     lines.insert(i, f"{key}=\n")
-                
+
                 updated = True
                 break
             i += 1
@@ -870,12 +901,14 @@ if os.name != "nt":
 async def lifespan(app: FastAPI):
     """
     Manage FastAPI application lifespan.
-    
+
     Handles startup and shutdown events gracefully, including proper
     exception handling for cancellation during shutdown/restart.
     """
     # Startup
     logging.info("FastAPI application starting up...")
+    # Ensure web handler is attached after any uvicorn initialization
+    ensure_web_handler_attached()
     try:
         yield
     except asyncio.CancelledError:
@@ -893,977 +926,550 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    """
-    Render the web interface with enhanced UI features:
-    - Dark mode toggle with localStorage persistence
-    - Confirmation dialogs for destructive actions
-    - Loading states on all async operations
-    - Toast notifications instead of alerts
-    - Live metrics dashboard
-    - Test notification button
-    - Copy-to-clipboard buttons
-    - Custom favicon
-    """
-    # Get current configuration
-    testflight_ids = get_current_id_list()
-    apprise_urls = get_current_apprise_urls()
-    check_interval = SLEEP_TIME / 1000  # Convert ms to seconds
-    
-    # Get version
-    version = __version__
-    
+    uptime = datetime.now() - app_start_time
+    uptime_str = str(uptime).split(".")[0]  # Remove microseconds
+
+    # Get recent logs using thread-safe function
+    recent_logs = get_recent_logs(20)  # Show last 20 entries
+
+    # Build log HTML
+    log_html = ""
+    for entry in reversed(recent_logs):  # Show newest first
+        level_color = {
+            "INFO": "#28a745",
+            "WARNING": "#ffc107",
+            "ERROR": "#dc3545",
+            "DEBUG": "#6c757d",
+        }.get(entry["level"], "#000000")
+
+        log_html += f"""
+        <div style="margin: 5px 0; padding: 5px; border-left: 3px solid {level_color}; background-color: #f8f9fa;">
+            <span style="color: #6c757d; font-size: 0.9em;">{entry['timestamp']}</span>
+            <span style="color: {level_color}; font-weight: bold; margin-left: 10px;">[{entry['level']}]</span>
+            <span style="margin-left: 10px;">{entry['message']}</span>
+        </div>
+        """
+
     html_content = f"""
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TestFlight Notifier</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
-    <style>
-        :root {{
-            --bg-primary: #f5f5f5;
-            --bg-secondary: white;
-            --bg-tertiary: #f9f9f9;
-            --bg-code: #1e1e1e;
-            --text-primary: #333;
-            --text-secondary: #666;
-            --text-code: #d4d4d4;
-            --border-color: #ddd;
-            --shadow: rgba(0,0,0,0.1);
-            --accent-primary: #4CAF50;
-            --accent-danger: #f44336;
-            --accent-warning: #FF9800;
-            --accent-info: #2196F3;
-            --log-info: #4FC3F7;
-            --log-success: #81C784;
-            --log-warning: #FFB74D;
-            --log-error: #E57373;
-        }}
-        
-        [data-theme="dark"] {{
-            --bg-primary: #1a1a1a;
-            --bg-secondary: #2d2d2d;
-            --bg-tertiary: #383838;
-            --bg-code: #0d0d0d;
-            --text-primary: #e0e0e0;
-            --text-secondary: #b0b0b0;
-            --text-code: #d4d4d4;
-            --border-color: #444;
-            --shadow: rgba(0,0,0,0.3);
-            --accent-primary: #66BB6A;
-            --accent-danger: #EF5350;
-            --accent-warning: #FFA726;
-            --accent-info: #42A5F5;
-        }}
-        
-        * {{
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }}
-        
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.6;
-            background-color: var(--bg-primary);
-            color: var(--text-primary);
-            padding: 20px;
-            transition: background-color 0.3s ease, color 0.3s ease;
-        }}
-        
-        .container {{
-            max-width: 1200px;
-            margin: 0 auto;
-        }}
-        
-        header {{
-            background: var(--bg-secondary);
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px var(--shadow);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 15px;
-        }}
-        
-        .header-left {{
-            flex: 1;
-        }}
-        
-        h1 {{
-            color: var(--text-primary);
-            margin-bottom: 10px;
-        }}
-        
-        .version {{
-            color: var(--text-secondary);
-            font-size: 0.9em;
-        }}
-        
-        .header-right {{
-            display: flex;
-            gap: 15px;
-            align-items: center;
-        }}
-        
-        .theme-toggle {{
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            padding: 8px 16px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 1.1em;
-            transition: all 0.3s ease;
-        }}
-        
-        .theme-toggle:hover {{
-            transform: scale(1.05);
-            box-shadow: 0 2px 8px var(--shadow);
-        }}
-        
-        .status {{
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 4px;
-            font-size: 0.9em;
-            font-weight: 500;
-        }}
-        
-        .status.running {{
-            background-color: var(--accent-primary);
-            color: white;
-        }}
-        
-        .status.stopped {{
-            background-color: var(--accent-danger);
-            color: white;
-        }}
-        
-        .card {{
-            background: var(--bg-secondary);
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px var(--shadow);
-        }}
-        
-        .card h2 {{
-            color: var(--text-primary);
-            margin-bottom: 15px;
-            border-bottom: 2px solid var(--accent-primary);
-            padding-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }}
-        
-        .copy-btn {{
-            background: var(--accent-info);
-            color: white;
-            border: none;
-            padding: 5px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.85em;
-            transition: all 0.2s;
-        }}
-        
-        .copy-btn:hover {{
-            opacity: 0.9;
-            transform: translateY(-1px);
-        }}
-        
-        .control-buttons {{
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
-            flex-wrap: wrap;
-        }}
-        
-        button {{
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 1em;
-            transition: all 0.3s;
-            position: relative;
-        }}
-        
-        button:hover:not(:disabled) {{
-            opacity: 0.9;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 8px var(--shadow);
-        }}
-        
-        button:disabled {{
-            opacity: 0.6;
-            cursor: not-allowed;
-        }}
-        
-        button.loading {{
-            pointer-events: none;
-        }}
-        
-        button.loading::after {{
-            content: '';
-            position: absolute;
-            width: 16px;
-            height: 16px;
-            top: 50%;
-            left: 50%;
-            margin-left: -8px;
-            margin-top: -8px;
-            border: 2px solid transparent;
-            border-top-color: white;
-            border-radius: 50%;
-            animation: spin 0.6s linear infinite;
-        }}
-        
-        @keyframes spin {{
-            to {{ transform: rotate(360deg); }}
-        }}
-        
-        .btn-start {{
-            background-color: var(--accent-primary);
-            color: white;
-        }}
-        
-        .btn-stop {{
-            background-color: var(--accent-danger);
-            color: white;
-        }}
-        
-        .btn-restart {{
-            background-color: var(--accent-warning);
-            color: white;
-        }}
-        
-        .btn-refresh {{
-            background-color: var(--accent-info);
-            color: white;
-        }}
-        
-        .btn-test {{
-            background-color: #9C27B0;
-            color: white;
-        }}
-        
-        .info-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-top: 15px;
-        }}
-        
-        .info-item {{
-            background: var(--bg-tertiary);
-            padding: 15px;
-            border-radius: 4px;
-            border-left: 4px solid var(--accent-primary);
-            transition: transform 0.2s;
-        }}
-        
-        .info-item:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px var(--shadow);
-        }}
-        
-        .info-item label {{
-            display: block;
-            color: var(--text-secondary);
-            font-size: 0.9em;
-            margin-bottom: 5px;
-        }}
-        
-        .info-item .value {{
-            font-size: 1.2em;
-            font-weight: 500;
-            color: var(--text-primary);
-        }}
-        
-        .metrics-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }}
-        
-        .metric-card {{
-            background: linear-gradient(135deg, var(--accent-info) 0%, #1976D2 100%);
-            color: white;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-            box-shadow: 0 4px 6px var(--shadow);
-            transition: transform 0.2s;
-        }}
-        
-        .metric-card:hover {{
-            transform: translateY(-4px);
-            box-shadow: 0 6px 12px var(--shadow);
-        }}
-        
-        .metric-card.success {{
-            background: linear-gradient(135deg, var(--accent-primary) 0%, #388E3C 100%);
-        }}
-        
-        .metric-card.warning {{
-            background: linear-gradient(135deg, var(--accent-warning) 0%, #F57C00 100%);
-        }}
-        
-        .metric-card.danger {{
-            background: linear-gradient(135deg, var(--accent-danger) 0%, #D32F2F 100%);
-        }}
-        
-        .metric-value {{
-            font-size: 2.5em;
-            font-weight: bold;
-            margin: 10px 0;
-        }}
-        
-        .metric-label {{
-            font-size: 0.9em;
-            opacity: 0.9;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }}
-        
-        .id-list {{
-            list-style: none;
-            margin-top: 10px;
-        }}
-        
-        .id-item {{
-            background: var(--bg-tertiary);
-            padding: 10px;
-            margin-bottom: 8px;
-            border-radius: 4px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: all 0.2s;
-        }}
-        
-        .id-item:hover {{
-            transform: translateX(4px);
-            box-shadow: 0 2px 8px var(--shadow);
-        }}
-        
-        .id-item code {{
-            background: var(--bg-secondary);
-            padding: 2px 8px;
-            border-radius: 3px;
-            font-family: 'Courier New', monospace;
-            color: var(--text-primary);
-            border: 1px solid var(--border-color);
-        }}
-        
-        .remove-btn {{
-            background-color: var(--accent-danger);
-            color: white;
-            padding: 5px 10px;
-            font-size: 0.9em;
-        }}
-        
-        .add-form {{
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
-        }}
-        
-        input[type="text"] {{
-            flex: 1;
-            padding: 10px;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            font-size: 1em;
-            background: var(--bg-tertiary);
-            color: var(--text-primary);
-            transition: border-color 0.3s;
-        }}
-        
-        input[type="text"]:focus {{
-            outline: none;
-            border-color: var(--accent-primary);
-            box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
-        }}
-        
-        .url-item {{
-            background: var(--bg-tertiary);
-            padding: 10px;
-            margin-bottom: 8px;
-            border-radius: 4px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            transition: all 0.2s;
-        }}
-        
-        .url-item:hover {{
-            transform: translateX(4px);
-            box-shadow: 0 2px 8px var(--shadow);
-        }}
-        
-        .url-icon {{
-            font-size: 1.5em;
-        }}
-        
-        .url-text {{
-            flex: 1;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
-            word-break: break-all;
-            color: var(--text-primary);
-        }}
-        
-        .logs-container {{
-            background: var(--bg-code);
-            color: var(--text-code);
-            padding: 15px;
-            border-radius: 4px;
-            max-height: 400px;
-            overflow-y: auto;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
-            border: 1px solid var(--border-color);
-        }}
-        
-        .log-entry {{
-            margin-bottom: 8px;
-            padding: 4px 0;
-            animation: fadeIn 0.3s ease-in;
-        }}
-        
-        @keyframes fadeIn {{
-            from {{ opacity: 0; transform: translateY(-5px); }}
-            to {{ opacity: 1; transform: translateY(0); }}
-        }}
-        
-        .log-entry.info {{
-            color: var(--log-info);
-        }}
-        
-        .log-entry.success {{
-            color: var(--log-success);
-        }}
-        
-        .log-entry.warning {{
-            color: var(--log-warning);
-        }}
-        
-        .log-entry.error {{
-            color: var(--log-error);
-        }}
-        
-        .toast-container {{
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1000;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }}
-        
-        .toast {{
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            padding: 15px 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px var(--shadow);
-            min-width: 300px;
-            max-width: 400px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            animation: slideIn 0.3s ease-out;
-            border-left: 4px solid var(--accent-info);
-        }}
-        
-        @keyframes slideIn {{
-            from {{ transform: translateX(400px); opacity: 0; }}
-            to {{ transform: translateX(0); opacity: 1; }}
-        }}
-        
-        .toast.success {{
-            border-left-color: var(--accent-primary);
-        }}
-        
-        .toast.error {{
-            border-left-color: var(--accent-danger);
-        }}
-        
-        .toast.warning {{
-            border-left-color: var(--accent-warning);
-        }}
-        
-        .toast-icon {{
-            font-size: 1.5em;
-        }}
-        
-        .toast-message {{
-            flex: 1;
-        }}
-        
-        .toast-close {{
-            background: none;
-            border: none;
-            color: var(--text-secondary);
-            cursor: pointer;
-            padding: 0;
-            font-size: 1.2em;
-        }}
-        
-        .modal {{
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 999;
-            align-items: center;
-            justify-content: center;
-        }}
-        
-        .modal.show {{
-            display: flex;
-        }}
-        
-        .modal-content {{
-            background: var(--bg-secondary);
-            padding: 30px;
-            border-radius: 12px;
-            max-width: 500px;
-            width: 90%;
-            box-shadow: 0 8px 32px var(--shadow);
-            animation: modalSlide 0.3s ease-out;
-        }}
-        
-        @keyframes modalSlide {{
-            from {{ transform: translateY(-50px); opacity: 0; }}
-            to {{ transform: translateY(0); opacity: 1; }}
-        }}
-        
-        .modal-header {{
-            font-size: 1.3em;
-            font-weight: 600;
-            margin-bottom: 15px;
-            color: var(--text-primary);
-        }}
-        
-        .modal-body {{
-            margin-bottom: 20px;
-            color: var(--text-secondary);
-            line-height: 1.5;
-        }}
-        
-        .modal-footer {{
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
-        }}
-        
-        .btn-secondary {{
-            background: var(--bg-tertiary);
-            color: var(--text-primary);
-            border: 1px solid var(--border-color);
-        }}
-    </style>
-</head>
-<body>
-    <div class="toast-container" id="toast-container"></div>
-    
-    <div class="modal" id="confirmation-modal">
-        <div class="modal-content">
-            <div class="modal-header" id="modal-title">Confirm Action</div>
-            <div class="modal-body" id="modal-message">Are you sure?</div>
-            <div class="modal-footer">
-                <button class="btn-secondary" onclick="closeModal()">Cancel</button>
-                <button class="btn-stop" id="modal-confirm" onclick="confirmAction()">Confirm</button>
-            </div>
-        </div>
-    </div>
-    
-    <div class="container">
-        <header>
-            <div class="header-left">
-                <h1>🚀 TestFlight Notifier</h1>
-                <p class="version">Version {version}</p>
-            </div>
-            <div class="header-right">
-                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
-                    <span id="theme-icon">🌙</span>
-                </button>
-            </div>
-        </header>
-        
-        <div class="card">
-            <h2>📊 Performance Metrics</h2>
-            <div class="metrics-grid" id="metrics-grid">
-                <div class="metric-card">
-                    <div class="metric-label">Total Checks</div>
-                    <div class="metric-value" id="metric-total">0</div>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>TestFlight Apprise Notifier - Status</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="refresh" content="30">
+        <style>
+            :root {{
+                --bg-color: #f5f5f5;
+                --container-bg: white;
+                --card-bg: #f8f9fa;
+                --text-color: #333;
+                --text-secondary: #666;
+                --border-color: #dee2e6;
+                --header-border: #007bff;
+                --success-color: #28a745;
+                --danger-color: #dc3545;
+                --warning-color: #ffc107;
+                --info-color: #17a2b8;
+                --shadow: rgba(0,0,0,0.1);
+            }}
+            
+            body {{ 
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                margin: 10px; 
+                background-color: var(--bg-color);
+                color: var(--text-color);
+                transition: background-color 0.3s, color 0.3s;
+            }}
+            .container {{ 
+                max-width: 1200px; 
+                margin: 0 auto; 
+                background-color: var(--container-bg); 
+                padding: 15px; 
+                border-radius: 8px; 
+                box-shadow: 0 2px 4px var(--shadow);
+                transition: background-color 0.3s, box-shadow 0.3s;
+            }}
+            .header {{ 
+                text-align: center; 
+                color: var(--text-color); 
+                border-bottom: 2px solid var(--header-border); 
+                padding-bottom: 10px; 
+                margin-bottom: 20px;
+                position: relative;
+            }}
+            .status-grid {{ 
+                display: grid; 
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); 
+                gap: 20px; 
+                margin-bottom: 30px;
+            }}
+            .status-card {{ 
+                background-color: var(--card-bg); 
+                padding: 15px; 
+                border-radius: 6px; 
+                border-left: 4px solid var(--success-color);
+                transition: background-color 0.3s;
+            }}
+            .status-card h3 {{ 
+                margin: 0 0 10px 0; 
+                color: var(--text-color); 
+                font-size: 1.1em;
+            }}
+            .status-card p {{
+                margin: 5px 0;
+                color: var(--text-secondary);
+            }}
+            .control-section {{
+                margin: 30px 0;
+                padding: 20px;
+                background-color: var(--card-bg);
+                border-radius: 8px;
+                text-align: center;
+                transition: background-color 0.3s;
+            }}
+            .control-section h2 {{
+                margin: 0 0 20px 0;
+                color: var(--text-color);
+                font-size: 1.3em;
+                font-weight: 600;
+            }}
+            .control-buttons {{
+                display: flex;
+                justify-content: center;
+                gap: 20px;
+                flex-wrap: wrap;
+            }}
+            .control-btn {{
+                padding: 8px 16px;
+                background-color: var(--success-color);
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 1em;
+                font-weight: 600;
+                margin: 0 5px;
+                min-width: 140px;
+                transition: background-color 0.2s;
+            }}
+            .control-btn:hover {{
+                opacity: 0.9;
+            }}
+            .control-btn:disabled {{
+                opacity: 0.6;
+                cursor: not-allowed;
+            }}
+            .stop-btn {{
+                background-color: var(--danger-color);
+            }}
+            .restart-btn {{
+                background-color: var(--warning-color);
+                color: #212529;
+            }}
+            .btn-icon {{
+                font-size: 1.2em;
+                display: inline-block;
+            }}
+            .btn-text {{
+                font-weight: 600;
+            }}
+            .logs-section {{ 
+                margin-top: 30px;
+            }}
+            .logs-header {{ 
+                background-color: var(--card-bg); 
+                color: var(--text-color);
+                padding: 10px 15px; 
+                margin: 0; 
+                border-radius: 6px 6px 0 0;
+            }}
+            .logs-container {{ 
+                max-height: 400px; 
+                overflow-y: auto; 
+                border: 1px solid var(--border-color); 
+                border-top: none; 
+                border-radius: 0 0 6px 6px; 
+                padding: 10px;
+                background-color: var(--container-bg);
+            }}
+            .refresh-info {{ 
+                text-align: center; 
+                color: var(--text-secondary); 
+                font-size: 0.9em; 
+                margin-top: 20px;
+            }}
+            .management-section {{ 
+                margin: 30px 0; 
+                padding: 20px; 
+                background-color: var(--card-bg); 
+                border-radius: 8px;
+                transition: background-color 0.3s;
+            }}
+            .management-grid {{
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }}
+            .management-card {{ 
+                background-color: var(--container-bg); 
+                padding: 15px; 
+                border-radius: 6px; 
+                border: 1px solid var(--border-color);
+                transition: background-color 0.3s, border-color 0.3s;
+            }}
+            .management-card h3 {{
+                margin: 0 0 15px 0;
+                color: var(--text-color);
+                font-size: 1.1em;
+            }}
+            .collapsible {{
+                cursor: pointer;
+                user-select: none;
+                position: relative;
+                padding-left: 20px;
+            }}
+            .collapsible:hover {{
+                background-color: #f0f0f0;
+            }}
+            .collapsible::before {{
+                content: "+";
+                position: absolute;
+                left: 0;
+                top: 50%;
+                transform: translateY(-50%);
+                color: #666;
+                font-weight: bold;
+                font-size: 1.2em;
+                transition: transform 0.2s ease;
+                margin-right: 5px;
+            }}
+            .collapsible.expanded::before {{
+                content: "−";
+                transform: translateY(-50%);
+            }}
+            .collapsible-content {{
+                display: none;
+                padding-left: 20px;
+            }}
+            .collapsible-content.expanded {{
+                display: block;
+            }}
+            @media (max-width: 768px) {{
+                body {{
+                    margin: 5px;
+                }}
+                .container {{
+                    padding: 10px;
+                }}
+                .status-grid {{
+                    grid-template-columns: 1fr;
+                    gap: 15px;
+                }}
+                .management-section {{
+                    margin: 20px 0;
+                    padding: 15px;
+                }}
+                .logs-container {{
+                    max-height: 300px;
+                }}
+                .control-section {{
+                    padding: 15px;
+                    margin: 20px 0;
+                }}
+                .control-buttons {{
+                    gap: 10px;
+                }}
+                .control-btn {{
+                    min-width: 120px;
+                    padding: 8px 12px;
+                    font-size: 0.9em;
+                }}
+            }}
+            @media (max-width: 480px) {{
+                .header {{
+                    font-size: 1.5em;
+                }}
+                .status-card {{
+                    padding: 12px;
+                }}
+                .management-card {{
+                    padding: 12px;
+                }}
+                .collapsible {{
+                    padding-left: 25px;
+                    font-size: 1em;
+                }}
+                .control-section {{
+                    padding: 15px;
+                    margin: 15px 0;
+                }}
+                .control-section h2 {{
+                    font-size: 1.1em;
+                    margin-bottom: 10px;
+                }}
+                .control-buttons {{
+                    flex-direction: column;
+                    gap: 8px;
+                }}
+                .control-btn {{
+                    min-width: 100%;
+                    padding: 10px 16px;
+                    font-size: 0.95em;
+                }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1 class="header">🚀 TestFlight Apprise Notifier</h1>
+            
+            <div class="status-grid">
+                <div class="status-card">
+                    <h3>🟢 Bot Status</h3>
+                    <p><strong>Status:</strong> Running</p>
+                    <p><strong>Version:</strong> v{__version__}</p>
+                    <p><strong>Uptime:</strong> {uptime_str}</p>
                 </div>
-                <div class="metric-card success">
-                    <div class="metric-label">Success Rate</div>
-                    <div class="metric-value" id="metric-success">0%</div>
+                
+                <div class="status-card">
+                    <h3>📱 Monitoring</h3>
+                    <p><strong>TestFlight IDs:</strong> <span id="id-count">{len(ID_LIST)}</span></p>
+                    <p><strong>Apprise URLs:</strong> <span id="url-count">{len(APPRISE_URLS)}</span></p>
+                    <p><strong>Check Interval:</strong> {SLEEP_TIME/1000:.1f}s</p>
                 </div>
-                <div class="metric-card warning">
-                    <div class="metric-label">Available</div>
-                    <div class="metric-value" id="metric-available">0</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-label">Checks/Min</div>
-                    <div class="metric-value" id="metric-rate">0</div>
+                
+                <div class="status-card">
+                    <h3>💓 Heartbeat</h3>
+                    <p><strong>Interval:</strong> {HEARTBEAT_INTERVAL//3600}h</p>
+                    <p><strong>Last Check:</strong> {format_datetime(datetime.now())}</p>
                 </div>
             </div>
-        </div>
-        
-        <div class="card">
-            <h2>⚙️ System Status</h2>
-            <div class="info-grid">
-                <div class="info-item">
-                    <label>Status</label>
-                    <div class="value">
-                        <span id="status-indicator" class="status running">Running</span>
+            
+            <div class="control-section">
+                <h2 style="color: var(--text-color); margin-bottom: 20px; text-align: center;">
+                    ⚙️ Application & Notification Settings
+                </h2>
+                <div class="control-buttons">
+                    <button class="control-btn stop-btn" onclick="stopApplication()">
+                        🛑 Stop Application
+                    </button>
+                    <button class="control-btn restart-btn" onclick="restartApplication()">
+                        🔄 Restart Application
+                    </button>
+                </div>
+                
+                <div class="management-grid" style="margin-top: 30px;">
+                    <div class="management-card">
+                        <h3 class="collapsible" onclick="toggleCard(this)">Add Apprise URL</h3>
+                        <div class="collapsible-content">
+                            <div style="margin-bottom: 10px;">
+                                <input type="text" id="new-apprise-url" 
+                                       placeholder="Enter Apprise URL (e.g., discord://...)" 
+                                       style="padding: 8px; width: 100%; max-width: 300px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                                <button onclick="validateAndAddUrl()" 
+                                        style="padding: 8px 16px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px; width: 100%; max-width: 150px;">
+                                    Validate & Add
+                                </button>
+                            </div>
+                            <div id="add-url-status" style="margin-top: 10px; min-height: 20px;"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="management-card">
+                        <h3 class="collapsible" onclick="toggleCard(this)">Current Apprise URLs</h3>
+                        <div class="collapsible-content">
+                            <div id="current-urls" style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; padding: 10px; border-radius: 4px; background-color: #f8f9fa;">
+                                Loading...
+                            </div>
+                            <button onclick="refreshUrls()" 
+                                    style="margin-top: 10px; padding: 6px 12px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                🔄 Refresh
+                            </button>
+                        </div>
                     </div>
                 </div>
-                <div class="info-item">
-                    <label>Check Interval</label>
-                    <div class="value" id="check-interval">{check_interval}s</div>
-                </div>
-                <div class="info-item">
-                    <label>Monitored IDs</label>
-                    <div class="value" id="id-count">{len(testflight_ids)}</div>
-                </div>
-                <div class="info-item">
-                    <label>Notification Channels</label>
-                    <div class="value" id="url-count">{len(apprise_urls)}</div>
-                </div>
             </div>
             
-            <div class="control-buttons">
-                <button class="btn-start" onclick="startMonitoring()">▶️ Start</button>
-                <button class="btn-stop" onclick="showConfirmation('stop')">⏹️ Stop</button>
-                <button class="btn-restart" onclick="showConfirmation('restart')">🔄 Restart</button>
-                <button class="btn-refresh" onclick="refreshStatus()">↻ Refresh Status</button>
-                <button class="btn-test" onclick="sendTestNotification()">🔔 Test Notification</button>
-            </div>
-        </div>
-        
-        <div class="card">
-            <h2>
-                📱 TestFlight IDs
-                <button class="copy-btn" onclick="copyIds()">📋 Copy All</button>
+            <h2 style="color: var(--text-color); margin-bottom: 20px;">
+                🔧 TestFlight ID Management
             </h2>
-            <div id="testflight-ids">
-                <ul class="id-list" id="id-list">
-                    <!-- IDs will be populated here -->
-                </ul>
-            </div>
-            
-            <div class="add-form">
-                <input type="text" id="new-id" placeholder="Enter TestFlight ID (e.g., 1234567890)" />
-                <button class="btn-start" onclick="addId()">➕ Add ID</button>
-            </div>
-        </div>
-        
-        <div class="card">
-            <h2>
-                📢 Apprise URLs
-                <button class="copy-btn" onclick="copyUrls()">📋 Copy All</button>
-            </h2>
-            <div id="apprise-section">
-                <div id="current-urls">
-                    <!-- URLs will be populated here -->
+                
+                <div class="management-grid">
+                    <div class="management-card">
+                        <h3 class="collapsible" onclick="toggleCard(this)">Add TestFlight ID</h3>
+                        <div class="collapsible-content">
+                            <div style="margin-bottom: 10px;">
+                                <input type="text" id="new-tf-id" placeholder="Enter TestFlight ID" 
+                                       style="padding: 8px; width: 100%; max-width: 250px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                                <button onclick="validateAndAddId()" 
+                                        style="padding: 8px 16px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px; width: 100%; max-width: 150px;">
+                                    Validate & Add
+                                </button>
+                            </div>
+                            <div id="add-status" style="margin-top: 10px; min-height: 20px;"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="management-card">
+                        <h3 class="collapsible" onclick="toggleCard(this)">Current TestFlight IDs</h3>
+                        <div class="collapsible-content">
+                            <div id="current-ids" style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; padding: 10px; border-radius: 4px; background-color: #f8f9fa;">
+                                Loading...
+                            </div>
+                            <button onclick="refreshIds()" 
+                                    style="margin-top: 10px; padding: 6px 12px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                🔄 Refresh
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
-        
-        <div class="card">
-            <h2>📊 Recent Activity</h2>
-            <div class="logs-container" id="logs">
-                <div class="log-entry info">Fetching recent logs...</div>
+            
+            <div class="logs-section">
+                <h3 class="logs-header">📜 Recent Activity (Last 20 entries)</h3>
+                <div class="logs-container">
+                    {log_html if log_html else '<div style="text-align: center; color: #6c757d; padding: 20px;">No log entries yet...</div>'}
+                </div>
+            </div>
+            
+            <div class="refresh-info">
+                🔄 Page auto-refreshes every 30 seconds | Last updated: {format_datetime(datetime.now())}
             </div>
         </div>
-    </div>
-    
-    <script>
-        // Global state
-        let currentConfirmAction = null;
-        let allIds = [];
-        let allUrls = [];
         
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', function() {{
-            loadTheme();
-            refreshStatus();
-            displayIds({testflight_ids});
-            displayUrls({apprise_urls});
-            loadLogs();
-            loadMetrics();
-            
-            // Auto-refresh logs and metrics
-            setInterval(loadLogs, 5000);
-            setInterval(loadMetrics, 10000);
-            
-            // Add enter key support for ID input
-            document.getElementById('new-id').addEventListener('keypress', function(e) {{
-                if (e.key === 'Enter') {{
-                    addId();
-                }}
-            }});
-        }});
-        
-        // Theme Management
-        function loadTheme() {{
-            const theme = localStorage.getItem('theme') || 'light';
-            document.documentElement.setAttribute('data-theme', theme);
-            updateThemeIcon(theme);
-        }}
-        
-        function toggleTheme() {{
-            const currentTheme = document.documentElement.getAttribute('data-theme');
-            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-            document.documentElement.setAttribute('data-theme', newTheme);
-            localStorage.setItem('theme', newTheme);
-            updateThemeIcon(newTheme);
-            showToast('Theme changed to ' + newTheme + ' mode', 'success');
-        }}
-        
-        function updateThemeIcon(theme) {{
-            document.getElementById('theme-icon').textContent = theme === 'light' ? '🌙' : '☀️';
-        }}
-        
-        // Toast Notifications
-        function showToast(message, type = 'info') {{
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            toast.className = `toast ${{type}}`;
-            
-            const icons = {{
-                success: '✅',
-                error: '❌',
-                warning: '⚠️',
-                info: 'ℹ️'
-            }};
-            
-            toast.innerHTML = `
-                <span class="toast-icon">${{icons[type] || icons.info}}</span>
-                <span class="toast-message">${{message}}</span>
-                <button class="toast-close" onclick="this.parentElement.remove()">✕</button>
-            `;
-            
-            container.appendChild(toast);
-            
-            setTimeout(() => {{
-                toast.style.animation = 'slideIn 0.3s ease-out reverse';
-                setTimeout(() => toast.remove(), 300);
-            }}, 4000);
-        }}
-        
-        // Confirmation Modal
-        function showConfirmation(action) {{
-            currentConfirmAction = action;
-            const modal = document.getElementById('confirmation-modal');
-            const title = document.getElementById('modal-title');
-            const message = document.getElementById('modal-message');
-            
-            if (action === 'stop') {{
-                title.textContent = 'Stop Monitoring?';
-                message.textContent = 'This will stop all TestFlight monitoring. You can restart it anytime.';
-            }} else if (action === 'restart') {{
-                title.textContent = 'Restart Monitoring?';
-                message.textContent = 'This will restart the monitoring service. Any active checks will be interrupted briefly.';
-            }}
-            
-            modal.classList.add('show');
-        }}
-        
-        function closeModal() {{
-            document.getElementById('confirmation-modal').classList.remove('show');
-            currentConfirmAction = null;
-        }}
-        
-        async function confirmAction() {{
-            closeModal();
-            
-            if (currentConfirmAction === 'stop') {{
-                await stopMonitoring();
-            }} else if (currentConfirmAction === 'restart') {{
-                await restartMonitoring();
-            }}
-        }}
-        
-        // Loading States
-        function setButtonLoading(button, isLoading) {{
-            if (isLoading) {{
-                button.classList.add('loading');
-                button.disabled = true;
-                button.dataset.originalText = button.textContent;
-                button.textContent = '';
-            }} else {{
-                button.classList.remove('loading');
-                button.disabled = false;
-                if (button.dataset.originalText) {{
-                    button.textContent = button.dataset.originalText;
+        <script>
+            function toggleCard(header) {{
+                const content = header.nextElementSibling;
+                const isExpanded = content.classList.contains('expanded');
+                
+                // Toggle the content visibility
+                content.classList.toggle('expanded');
+                
+                // Toggle the arrow rotation
+                header.classList.toggle('expanded');
+                
+                // Optionally collapse other cards when one is expanded
+                if (!isExpanded) {{
+                    // Close other cards
+                    document.querySelectorAll('.collapsible-content.expanded').forEach(otherContent => {{
+                        if (otherContent !== content) {{
+                            otherContent.classList.remove('expanded');
+                            otherContent.previousElementSibling.classList.remove('expanded');
+                        }}
+                    }});
                 }}
             }}
-        }}
-        
-        // API Calls with Loading States
-        async function refreshStatus() {{
-            try {{
-                const response = await fetch('/api/status');
-                const data = await response.json();
-                
-                const statusIndicator = document.getElementById('status-indicator');
-                statusIndicator.textContent = data.monitoring ? 'Running' : 'Stopped';
-                statusIndicator.className = data.monitoring ? 'status running' : 'status stopped';
-                
-                document.getElementById('check-interval').textContent = data.check_interval + 's';
-            }} catch (error) {{
-                console.error('Error fetching status:', error);
-                showToast('Failed to fetch status', 'error');
-            }}
-        }}
-        
-        async function loadMetrics() {{
-            try {{
-                const response = await fetch('/api/metrics');
-                const data = await response.json();
-                
-                document.getElementById('metric-total').textContent = data.total_checks || 0;
-                document.getElementById('metric-success').textContent = (data.success_rate || 0).toFixed(1) + '%';
-                document.getElementById('metric-available').textContent = data.available_count || 0;
-                document.getElementById('metric-rate').textContent = (data.checks_per_minute || 0).toFixed(1);
-            }} catch (error) {{
-                console.error('Error loading metrics:', error);
-            }}
-        }}
-        
-        async function startMonitoring() {{
-            const btn = event.target;
-            setButtonLoading(btn, true);
             
-            try {{
-                const response = await fetch('/api/control/start', {{ method: 'POST' }});
-                const data = await response.json();
-                showToast(data.message, 'success');
-                await refreshStatus();
-            }} catch (error) {{
-                showToast('Error starting monitoring: ' + error.message, 'error');
-            }} finally {{
-                setButtonLoading(btn, false);
-            }}
-        }}
-        
-        async function stopMonitoring() {{
-            try {{
-                const response = await fetch('/api/control/stop', {{ method: 'POST' }});
-                const data = await response.json();
-                showToast(data.message, 'success');
-                await refreshStatus();
-            }} catch (error) {{
-                showToast('Error stopping monitoring: ' + error.message, 'error');
-            }}
-        }}
-        
-        async function restartMonitoring() {{
-            try {{
-                const response = await fetch('/api/control/restart', {{ method: 'POST' }});
-                const data = await response.json();
-                showToast(data.message, 'success');
-                setTimeout(refreshStatus, 2000);
-            }} catch (error) {{
-                showToast('Error restarting monitoring: ' + error.message, 'error');
-            }}
-        }}
-        
-        async function sendTestNotification() {{
-            const btn = event.target;
-            setButtonLoading(btn, true);
-            
-            try {{
-                const response = await fetch('/api/control/test-notification', {{ method: 'POST' }});
-                const data = await response.json();
-                
-                if (response.ok) {{
-                    showToast(data.message, 'success');
-                }} else {{
-                    showToast(data.detail || 'Test notification failed', 'error');
-                }}
-            }} catch (error) {{
-                showToast('Error sending test notification: ' + error.message, 'error');
-            }} finally {{
-                setButtonLoading(btn, false);
-            }}
-        }}
-        
-        function displayIds(ids) {{
-            allIds = ids;
-            const container = document.getElementById('id-list');
-            if (ids.length === 0) {{
-                container.innerHTML = '<li style="padding: 10px;"><em>No TestFlight IDs configured</em></li>';
-                return;
-            }}
-            
-            container.innerHTML = ids.map(id => `
-                <li class="id-item">
-                    <code>${{id}}</code>
-                    <button class="remove-btn" onclick="removeId('${{id}}')">🗑️ Remove</button>
-                </li>
-            `).join('');
-        }}
-        
-        async function addId() {{
-            const input = document.getElementById('new-id');
-            const tfId = input.value.trim();
-            
-            if (!tfId) {{
-                showToast('Please enter a TestFlight ID', 'warning');
-                return;
-            }}
-            
-            try {{
-                const response = await fetch('/api/testflight-ids', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{ testflight_id: tfId }})
-                }});
-                
-                const data = await response.json();
-                
-                if (response.ok) {{
+            async function refreshIds() {{
+                try {{
+                    const response = await fetch('/api/testflight-ids/details');
+                    const data = await response.json();
                     displayIds(data.testflight_ids);
                     document.getElementById('id-count').textContent = data.testflight_ids.length;
-                    input.value = '';
-                    showToast(data.message, 'success');
-                }} else {{
-                    showToast(`Failed to add ID: ${{data.detail || 'Unknown error'}}`, 'error');
+                }} catch (error) {{
+                    console.error('Error refreshing IDs:', error);
                 }}
-            }} catch (error) {{
-                showToast(`Error adding ID: ${{error.message}}`, 'error');
             }}
-        }}
-        
-        async function removeId(tfId) {{
-            // Show inline confirmation instead of browser alert
-            const modal = document.getElementById('confirmation-modal');
-            const title = document.getElementById('modal-title');
-            const message = document.getElementById('modal-message');
             
-            title.textContent = 'Remove TestFlight ID?';
-            message.textContent = `Are you sure you want to remove ID: ${{tfId}}?`;
+            function displayIds(ids) {{
+                const container = document.getElementById('current-ids');
+                if (ids.length === 0) {{
+                    container.innerHTML = '<em>No TestFlight IDs configured</em>';
+                    return;
+                }}
+                
+                container.innerHTML = ids.map(item => {{
+                    const displayName = item.display_name || item.id;
+                    const isAppName = item.app_name && item.app_name !== item.id;
+                    const iconHtml = item.icon_url ? 
+                        `<img src="${{item.icon_url}}" style="width: 20px; height: 20px; border-radius: 4px; margin-right: 8px; vertical-align: middle;" alt="App Icon">` : 
+                        '📱 ';
+                    
+                    return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee;">
+                        <div style="display: flex; align-items: center; flex-grow: 1;">
+                            ${{iconHtml}}
+                            <div>
+                                <div style="font-weight: ${{isAppName ? 'bold' : 'normal'}};">${{displayName}}</div>
+                                ${{isAppName ? `<div style="font-size: 0.8em; color: #666;">${{item.id}}</div>` : ''}}
+                            </div>
+                        </div>
+                        <button onclick="removeId('${{item.id}}')" 
+                                style="padding: 8px 16px; background-color: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">
+                            ❌ Remove
+                        </button>
+                    </div>`;
+                }}).join('');
+            }}
             
-            currentConfirmAction = async () => {{
+            async function validateAndAddId() {{
+                const tfId = document.getElementById('new-tf-id').value.trim();
+                const statusDiv = document.getElementById('add-status');
+                
+                if (!tfId) {{
+                    statusDiv.innerHTML = '<span style="color: #dc3545;">Please enter a TestFlight ID</span>';
+                    return;
+                }}
+                
+                statusDiv.innerHTML = '<span style="color: #007bff;">Validating...</span>';
+                
+                try {{
+                    // First validate
+                    const validateResponse = await fetch('/api/testflight-ids/validate', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ id: tfId }})
+                    }});
+                    
+                    const validateData = await validateResponse.json();
+                    
+                    if (!validateData.valid) {{
+                        statusDiv.innerHTML = `<span style="color: #dc3545;">${{validateData.message}}</span>`;
+                        return;
+                    }}
+                    
+                    // Show validation success with app name if available
+                    let validationMessage = 'Valid TestFlight ID';
+                    if (validateData.app_name && validateData.app_name !== tfId) {{
+                        const iconHtml = validateData.icon_url ? 
+                            `<img src="${{validateData.icon_url}}" style="width: 16px; height: 16px; border-radius: 3px; margin-right: 5px; vertical-align: middle;" alt="App Icon">` : 
+                            '📱 ';
+                        validationMessage = `${{iconHtml}}Found: <strong>${{validateData.app_name}}</strong>`;
+                    }}
+                    statusDiv.innerHTML = `<span style="color: #28a745;">${{validationMessage}}</span>`;
+                    
+                    // Add small delay to show the validation result before adding
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    // If valid, add it
+                    statusDiv.innerHTML = '<span style="color: #007bff;">Adding...</span>';
+                    
+                    const addResponse = await fetch('/api/testflight-ids', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ id: tfId }})
+                    }});
+                    
+                    const addData = await addResponse.json();
+                    
+                    if (addResponse.ok) {{
+                        statusDiv.innerHTML = `<span style="color: #28a745;">${{addData.message}}</span>`;
+                        document.getElementById('new-tf-id').value = '';
+                        displayIds(addData.testflight_ids);
+                        document.getElementById('id-count').textContent = addData.testflight_ids.length;
+                    }} else {{
+                        statusDiv.innerHTML = `<span style="color: #dc3545;">${{addData.detail || 'Failed to add ID'}}</span>`;
+                    }}
+                }} catch (error) {{
+                    statusDiv.innerHTML = `<span style="color: #dc3545;">Error: ${{error.message}}</span>`;
+                }}
+            }}
+            
+            async function removeId(tfId) {{
+                if (!confirm(`Are you sure you want to remove TestFlight ID "${{tfId}}"?`)) {{
+                    return;
+                }}
+                
                 try {{
                     const response = await fetch(`/api/testflight-ids/${{tfId}}`, {{
                         method: 'DELETE'
@@ -1874,127 +1480,236 @@ async def home():
                     if (response.ok) {{
                         displayIds(data.testflight_ids);
                         document.getElementById('id-count').textContent = data.testflight_ids.length;
-                        showToast(data.message, 'success');
+                        alert(data.message);
                     }} else {{
-                        showToast(`Failed to remove ID: ${{data.detail || 'Unknown error'}}`, 'error');
+                        alert(`Failed to remove ID: ${{data.detail || 'Unknown error'}}`);
                     }}
                 }} catch (error) {{
-                    showToast(`Error removing ID: ${{error.message}}`, 'error');
+                    alert(`Error removing ID: ${{error.message}}`);
                 }}
-            }};
-            
-            modal.classList.add('show');
-            
-            // Override confirm button to use our custom action
-            document.getElementById('modal-confirm').onclick = () => {{
-                closeModal();
-                currentConfirmAction();
-            }};
-        }}
-        
-        function displayUrls(urls) {{
-            allUrls = urls;
-            const container = document.getElementById('current-urls');
-            if (urls.length === 0) {{
-                container.innerHTML = '<em>No Apprise URLs configured</em>';
-                return;
             }}
             
-            container.innerHTML = urls.map(url => {{
-                // Extract service type from URL for icon
-                let icon = '📢';
-                if (url.includes('discord://')) icon = '💬';
-                else if (url.includes('slack://')) icon = '💼';
-                else if (url.includes('telegram://')) icon = '✈️';
-                else if (url.includes('pushover://')) icon = '📱';
-                else if (url.includes('gotify://')) icon = '🔔';
-                else if (url.includes('mailto:')) icon = '📧';
-                else if (url.includes('http://') || url.includes('https://')) icon = '🌐';
-                
-                // Mask sensitive parts of the URL for display
-                let displayUrl = url;
+            async function refreshUrls() {{
                 try {{
-                    const urlObj = new URL(url);
-                    if (urlObj.username || urlObj.password) {{
-                        displayUrl = url.replace(urlObj.username + ':' + urlObj.password, '***:***');
-                    }}
-                    // Hide query parameters for security
-                    displayUrl = displayUrl.split('?')[0];
-                }} catch (e) {{
-                    // If URL parsing fails, just show a masked version
-                    displayUrl = url.substring(0, 20) + '...';
+                    const response = await fetch('/api/apprise-urls');
+                    const data = await response.json();
+                    displayUrls(data.apprise_urls);
+                }} catch (error) {{
+                    console.error('Error refreshing URLs:', error);
                 }}
-                
-                return `
-                    <div class="url-item">
-                        <span class="url-icon">${{icon}}</span>
-                        <span class="url-text">${{displayUrl}}</span>
-                    </div>
-                `;
-            }}).join('');
-        }}
-        
-        // Copy to Clipboard Functions
-        async function copyIds() {{
-            if (allIds.length === 0) {{
-                showToast('No IDs to copy', 'warning');
-                return;
             }}
             
-            try {{
-                await navigator.clipboard.writeText(allIds.join('\n'));
-                showToast(`Copied ${{allIds.length}} TestFlight IDs to clipboard`, 'success');
-            }} catch (error) {{
-                showToast('Failed to copy to clipboard', 'error');
-            }}
-        }}
-        
-        async function copyUrls() {{
-            if (allUrls.length === 0) {{
-                showToast('No URLs to copy', 'warning');
-                return;
-            }}
-            
-            try {{
-                await navigator.clipboard.writeText(allUrls.join('\n'));
-                showToast(`Copied ${{allUrls.length}} Apprise URLs to clipboard`, 'success');
-            }} catch (error) {{
-                showToast('Failed to copy to clipboard', 'error');
-            }}
-        }}
-        
-        async function loadLogs() {{
-            try {{
-                const response = await fetch('/api/logs?lines=50');
-                const data = await response.json();
-                
-                const logsContainer = document.getElementById('logs');
-                if (data.logs.length === 0) {{
-                    logsContainer.innerHTML = '<div class="log-entry info">No recent activity</div>';
+            function displayUrls(urls) {{
+                const container = document.getElementById('current-urls');
+                if (urls.length === 0) {{
+                    container.innerHTML = '<em>No Apprise URLs configured</em>';
                     return;
                 }}
                 
-                logsContainer.innerHTML = data.logs.map(log => {{
-                    let className = 'log-entry';
-                    if (log.toLowerCase().includes('error')) className += ' error';
-                    else if (log.toLowerCase().includes('success')) className += ' success';
-                    else if (log.toLowerCase().includes('warning')) className += ' warning';
-                    else className += ' info';
+                container.innerHTML = urls.map(url => {{
+                    // Extract service type from URL for icon
+                    let icon = '📢';
+                    if (url.includes('discord://')) icon = '💬';
+                    else if (url.includes('slack://')) icon = '💼';
+                    else if (url.includes('telegram://')) icon = '✈️';
+                    else if (url.includes('pushover://')) icon = '📱';
+                    else if (url.includes('gotify://')) icon = '🔔';
+                    else if (url.includes('mailto:')) icon = '📧';
+                    else if (url.includes('http://') || url.includes('https://')) icon = '🌐';
                     
-                    return `<div class="${{className}}">${{log}}</div>`;
+                    // Mask sensitive parts of the URL for display
+                    let displayUrl = url;
+                    try {{
+                        const urlObj = new URL(url);
+                        if (urlObj.username || urlObj.password) {{
+                            displayUrl = url.replace(urlObj.username + ':' + urlObj.password, '***:***');
+                        }}
+                        // Hide query parameters for security
+                        displayUrl = displayUrl.split('?')[0];
+                    }} catch (e) {{
+                        // If URL parsing fails, just show a masked version
+                        displayUrl = url.substring(0, 20) + '...';
+                    }}
+                    
+                    return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee;">
+                        <div style="display: flex; align-items: center; flex-grow: 1;">
+                            <span style="font-size: 1.2em; margin-right: 8px;">${{icon}}</span>
+                            <span style="font-family: monospace; font-size: 0.9em;">${{displayUrl}}</span>
+                        </div>
+                        <button onclick="removeUrl('${{encodeURIComponent(url)}}')" 
+                                style="padding: 8px 16px; background-color: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">
+                            ❌ Remove
+                        </button>
+                    </div>`;
                 }}).join('');
-                
-                // Auto-scroll to bottom
-                logsContainer.scrollTop = logsContainer.scrollHeight;
-            }} catch (error) {{
-                console.error('Error loading logs:', error);
             }}
-        }}
-    </script>
-</body>
-</html>
-"""
-    
+            
+            async function validateAndAddUrl() {{
+                const url = document.getElementById('new-apprise-url').value.trim();
+                const statusDiv = document.getElementById('add-url-status');
+                
+                if (!url) {{
+                    statusDiv.innerHTML = '<span style="color: #dc3545;">Please enter an Apprise URL</span>';
+                    return;
+                }}
+                
+                statusDiv.innerHTML = '<span style="color: #007bff;">Validating...</span>';
+                
+                try {{
+                    // First validate
+                    const validateResponse = await fetch('/api/apprise-urls/validate', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ url: url }})
+                    }});
+                    
+                    const validateData = await validateResponse.json();
+                    
+                    if (!validateData.valid) {{
+                        statusDiv.innerHTML = `<span style="color: #dc3545;">${{validateData.message}}</span>`;
+                        return;
+                    }}
+                    
+                    // Show validation success
+                    statusDiv.innerHTML = `<span style="color: #28a745;">${{validateData.message}}</span>`;
+                    
+                    // Add small delay to show the validation result before adding
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    // If valid, add it
+                    statusDiv.innerHTML = '<span style="color: #007bff;">Adding...</span>';
+                    
+                    const addResponse = await fetch('/api/apprise-urls', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ url: url }})
+                    }});
+                    
+                    const addData = await addResponse.json();
+                    
+                    if (addResponse.ok) {{
+                        statusDiv.innerHTML = `<span style="color: #28a745;">${{addData.message}}</span>`;
+                        document.getElementById('new-apprise-url').value = '';
+                        displayUrls(addData.apprise_urls);
+                        document.getElementById('url-count').textContent = addData.apprise_urls.length;
+                    }} else {{
+                        statusDiv.innerHTML = `<span style="color: #dc3545;">${{addData.detail || 'Failed to add URL'}}</span>`;
+                    }}
+                }} catch (error) {{
+                    statusDiv.innerHTML = `<span style="color: #dc3545;">Error: ${{error.message}}</span>`;
+                }}
+            }}
+            
+            async function removeUrl(encodedUrl) {{
+                const url = decodeURIComponent(encodedUrl);
+                if (!confirm(`Are you sure you want to remove this Apprise URL?`)) {{
+                    return;
+                }}
+                
+                try {{
+                    const response = await fetch(`/api/apprise-urls/${{encodedUrl}}`, {{
+                        method: 'DELETE'
+                    }});
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok) {{
+                        displayUrls(data.apprise_urls);
+                        document.getElementById('url-count').textContent = data.apprise_urls.length;
+                        alert(data.message);
+                    }} else {{
+                        alert(`Failed to remove URL: ${{data.detail || 'Unknown error'}}`);
+                    }}
+                }} catch (error) {{
+                    alert(`Error removing URL: ${{error.message}}`);
+                }}
+            }}
+            
+            // Load IDs on page load
+            document.addEventListener('DOMContentLoaded', function() {{
+                refreshIds();
+                refreshUrls();
+                // Initialize collapsible sections - expand by default
+                document.querySelectorAll('.collapsible-content').forEach(content => {{
+                    content.classList.add('expanded');
+                }});
+                document.querySelectorAll('.collapsible').forEach(header => {{
+                    header.classList.add('expanded');
+                }});
+            }});
+            
+            // Allow Enter key to submit
+            document.getElementById('new-tf-id').addEventListener('keypress', function(e) {{
+                if (e.key === 'Enter') {{
+                    validateAndAddId();
+                }}
+            }});
+            
+            async function stopApplication() {{
+                if (!confirm('Are you sure you want to stop the TestFlight Apprise Notifier? This will shut down the application.')) {{
+                    return;
+                }}
+                
+                try {{
+                    const response = await fetch('/api/control/stop', {{
+                        method: 'POST'
+                    }});
+                    
+                    if (response.ok) {{
+                        alert('Application is shutting down...');
+                        // Disable buttons
+                        document.querySelector('.stop-btn').disabled = true;
+                        document.querySelector('.restart-btn').disabled = true;
+                        // Show shutdown message
+                        document.querySelector('.container').innerHTML = `
+                            <div style="text-align: center; padding: 50px;">
+                                <h2>🛑 Application Stopped</h2>
+                                <p>The TestFlight Apprise Notifier has been shut down.</p>
+                                <p>To restart, run the application again from the command line.</p>
+                            </div>
+                        `;
+                    }} else {{
+                        alert('Failed to stop application');
+                    }}
+                }} catch (error) {{
+                    alert('Error stopping application: ' + error.message);
+                }}
+            }}
+            
+            async function restartApplication() {{
+                if (!confirm('Are you sure you want to restart the TestFlight Apprise Notifier? This will reload the application with any code changes.')) {{
+                    return;
+                }}
+                
+                try {{
+                    const response = await fetch('/api/control/restart', {{
+                        method: 'POST'
+                    }});
+                    
+                    if (response.ok) {{
+                        alert('Application is restarting...');
+                        // Disable buttons
+                        document.querySelector('.stop-btn').disabled = true;
+                        document.querySelector('.restart-btn').disabled = true;
+                        // Show restart message
+                        document.querySelector('.container').innerHTML = `
+                            <div style="text-align: center; padding: 50px;">
+                                <h2>🔄 Application Restarting</h2>
+                                <p>The TestFlight Apprise Notifier is restarting...</p>
+                                <p>Please wait a moment and refresh the page.</p>
+                            </div>
+                        `;
+                    }} else {{
+                        alert('Failed to restart application');
+                    }}
+                }} catch (error) {{
+                    alert('Error restarting application: ' + error.message);
+                }}
+            }}
+        </script>
+    </body>
+    </html>
+    """
     return html_content
 
 
@@ -2317,23 +2032,6 @@ async def stop_application():
     return {"message": "Application is shutting down..."}
 
 
-@app.post("/api/control/test-notification")
-async def test_notification():
-    """Send a test notification to verify Apprise configuration."""
-    try:
-        msg = f"🧪 Test Notification from TestFlight Apprise Notifier\n\nTimestamp: {format_datetime(datetime.now())}\nStatus: All systems operational ✅"
-        result = send_notification(msg, apobj)
-        if result:
-            logging.info("Test notification sent successfully")
-            return {"success": True, "message": "Test notification sent successfully!"}
-        else:
-            logging.warning("Test notification failed to send")
-            return {"success": False, "message": "Failed to send test notification. Check your Apprise URL configuration."}
-    except Exception as e:
-        logging.error(f"Error sending test notification: {e}")
-        return {"success": False, "message": f"Error: {str(e)}"}
-
-
 @app.post("/api/control/restart")
 async def restart_application():
     """Restart the application."""
@@ -2520,7 +2218,7 @@ async def start_fastapi():
             log_config=get_uvicorn_log_config(),  # Use custom config to preserve formatting
         )
         server = uvicorn.Server(config)
-        
+
         # Install a custom signal handler to suppress CancelledError traceback
         async def serve_with_cancellation_handling():
             try:
@@ -2529,9 +2227,9 @@ async def start_fastapi():
                 # Expected during shutdown/restart - don't log as error
                 logging.debug("Server serve() cancelled - shutting down gracefully")
                 raise
-        
+
         await serve_with_cancellation_handling()
-        
+
     except asyncio.CancelledError:
         logging.info("FastAPI server cancelled during shutdown/restart")
         # Initiate graceful shutdown if server was created
