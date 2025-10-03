@@ -1,414 +1,825 @@
-# TestFlight Apprise Notifier# TestFlight Apprise Notifier
+# TestFlight Apprise Notifier# TestFlight Apprise Notifier# TestFlight Apprise Notifier
 
 
 
-Version 1.0.5eMonitors TestFlight beta links and sends notifications when a beta becomes available. Uses **FastAPI** for the server, **Apprise** for notifications, and **aiohttp** for asynchronous HTTP requests.
+**Version 1.0.5e**
 
 
 
-Monitors TestFlight beta links and sends notifications when slots become available. Built with FastAPI for the web server, Apprise for multi-platform notifications, and aiohttp for efficient asynchronous HTTP requests.---
+Monitors TestFlight beta links and sends notifications when slots become available. Built with FastAPI for the web server, Apprise for multi-platform notifications, and aiohttp for efficient asynchronous HTTP requests.Version 1.0.5eMonitors TestFlight beta links and sends notifications when a beta becomes available. Uses **FastAPI** for the server, **Apprise** for notifications, and **aiohttp** for asynchronous HTTP requests.
 
 
 
----## Features
+---
 
 
 
-## Features### Core Functionality
+## FeaturesMonitors TestFlight beta links and sends notifications when slots become available. Built with FastAPI for the web server, Apprise for multi-platform notifications, and aiohttp for efficient asynchronous HTTP requests.---
 
-- **TestFlight Monitoring** – Automatically checks TestFlight beta links for availability
 
-### Core Functionality- **Smart Notifications** – Sends alerts using Apprise when slots open up, including app icons as attachments for supported services (e.g., Discord, Slack)
 
-- **TestFlight Monitoring** - Automatically checks TestFlight beta links for availability- **Enhanced Status Detection** – Improved status checking with multiple detection patterns (Open, Full, Closed, Unknown)
+### Core Functionality
 
-- **Smart Notifications** - Sends alerts using Apprise when slots open up, including app icons as attachments for supported services- **Heartbeat Notifications** – Sends periodic status updates to ensure the bot is active
 
-- **Enhanced Status Detection** - Improved status checking with multiple detection patterns (Open, Full, Closed, Unknown)- **Graceful Shutdown** – Cleans up resources properly on exit
 
-- **Heartbeat Notifications** - Sends periodic status updates to ensure the bot is active- **Environment Variable Validation** – Ensures required configurations are set before starting
+- **TestFlight Monitoring** - Automatically checks TestFlight beta links for availability---## Features
 
-- **Graceful Shutdown** - Cleans up resources properly on exit- **App Name Extraction** – Accurately extracts and displays app names from TestFlight pages
+- **Smart Notifications** - Sends alerts using Apprise when slots open up, including app icons as attachments for supported services (e.g., Discord, Slack)
+
+- **Enhanced Status Detection** - Improved status checking with multiple detection patterns (Open, Full, Closed, Unknown)
+
+- **Heartbeat Notifications** - Sends periodic status updates to ensure the bot is active
+
+- **Graceful Shutdown** - Cleans up resources properly on exit## Features### Core Functionality
 
 - **Environment Variable Validation** - Ensures required configurations are set before starting
 
-- **App Name Extraction** - Accurately extracts and displays app names from TestFlight pages### Performance Optimizations
+- **App Name Extraction** - Accurately extracts and displays app names from TestFlight pages- **TestFlight Monitoring** – Automatically checks TestFlight beta links for availability
 
-- **HTTP Connection Pooling** – Shared aiohttp session with connection reuse, DNS caching, and keep-alive connections for 60-80% performance improvement
+- **GitHub Update Checker** - Automatic monitoring for repository updates with notifications and manual check via API
 
-### Performance Optimizations- **Circuit Breaker Pattern** – Automatic failure detection and recovery for external services with configurable thresholds
+### Core Functionality- **Smart Notifications** – Sends alerts using Apprise when slots open up, including app icons as attachments for supported services (e.g., Discord, Slack)
 
-- **HTTP Connection Pooling** - Shared aiohttp session with connection reuse, DNS caching, and keep-alive connections for 60-80% performance improvement- **LRU Cache with Size Limits** – Bounded caches (100 entries each) for app names and icons to prevent memory leaks
+### Performance Optimizations
 
-- **Circuit Breaker Pattern** - Automatic failure detection and recovery for external services with configurable thresholds- **Optional Status Caching** – Reduce redundant requests with configurable TTL (default: 5 minutes)
+- **TestFlight Monitoring** - Automatically checks TestFlight beta links for availability- **Enhanced Status Detection** – Improved status checking with multiple detection patterns (Open, Full, Closed, Unknown)
+
+- **HTTP Connection Pooling** - Shared aiohttp session with connection reuse, DNS caching, and keep-alive connections for 60-80% performance improvement
+
+- **Circuit Breaker Pattern** - Automatic failure detection and recovery for external services with configurable thresholds- **Smart Notifications** - Sends alerts using Apprise when slots open up, including app icons as attachments for supported services- **Heartbeat Notifications** – Sends periodic status updates to ensure the bot is active
+
+- **LRU Cache with Size Limits** - Bounded caches (100 entries each) for app names and icons to prevent memory leaks
+
+- **Optional Status Caching** - Reduce redundant requests with configurable TTL (default: 5 minutes)- **Enhanced Status Detection** - Improved status checking with multiple detection patterns (Open, Full, Closed, Unknown)- **Graceful Shutdown** – Cleans up resources properly on exit
+
+- **Request Deduplication** - Efficient caching reduces unnecessary HTTP requests
+
+- **Rate Limiting** - Sliding window algorithm prevents API throttling (default: 100 requests per 60 seconds)- **Heartbeat Notifications** - Sends periodic status updates to ensure the bot is active- **Environment Variable Validation** – Ensures required configurations are set before starting
+
+- **Exponential Backoff Retry** - Automatic retry with backoff (1s, 2s, 4s, 8s) and jitter for transient failures
+
+- **Smart Notifications** - Status change detection prevents notification spam (only notify on status changes)- **Graceful Shutdown** - Cleans up resources properly on exit- **App Name Extraction** – Accurately extracts and displays app names from TestFlight pages
+
+
+
+### Web Dashboard- **Environment Variable Validation** - Ensures required configurations are set before starting
+
+
+
+- **Real-time Status** - Bot status, version, uptime, and monitoring statistics- **App Name Extraction** - Accurately extracts and displays app names from TestFlight pages### Performance Optimizations
+
+- **Live Logs** - Recent activity with color-coded log levels and timestamps
+
+- **TestFlight ID Management** - Add/remove monitored apps through the web interface- **HTTP Connection Pooling** – Shared aiohttp session with connection reuse, DNS caching, and keep-alive connections for 60-80% performance improvement
+
+- **Apprise URL Management** - Add/remove notification URLs dynamically with service icons
+
+- **Mobile-Responsive Design** - Optimized for phones, tablets, and desktops### Performance Optimizations- **Circuit Breaker Pattern** – Automatic failure detection and recovery for external services with configurable thresholds
+
+- **Interactive Cards** - Collapsible sections with clean icons
+
+- **Auto-refresh** - Dashboard updates every 30 seconds- **HTTP Connection Pooling** - Shared aiohttp session with connection reuse, DNS caching, and keep-alive connections for 60-80% performance improvement- **LRU Cache with Size Limits** – Bounded caches (100 entries each) for app names and icons to prevent memory leaks
+
+- **RESTful API** - JSON APIs for status (`/api/status`), logs (`/api/logs`), health monitoring (`/api/health`), and metrics (`/api/metrics`)
+
+- **Application Control** - Stop and restart the application directly from the web interface- **Circuit Breaker Pattern** - Automatic failure detection and recovery for external services with configurable thresholds- **Optional Status Caching** – Reduce redundant requests with configurable TTL (default: 5 minutes)
+
+- **Batch Operations** - Efficient bulk add/remove operations via `/api/testflight-ids/batch` endpoint
 
 - **LRU Cache with Size Limits** - Bounded caches (100 entries each) for app names and icons to prevent memory leaks- **Request Deduplication** – Efficient caching reduces unnecessary HTTP requests
 
+### Robustness & Monitoring
+
 - **Optional Status Caching** - Reduce redundant requests with configurable TTL (default: 5 minutes)- **Rate Limiting** – Sliding window algorithm prevents API throttling (default: 100 requests per 60 seconds)
 
-- **Request Deduplication** - Efficient caching reduces unnecessary HTTP requests- **Exponential Backoff Retry** – Automatic retry with backoff (1s → 2s → 4s → 8s) and jitter for transient failures
+- **Health Check Endpoint** - Comprehensive system monitoring with cache stats, circuit breaker status, and HTTP session health
 
-- **Rate Limiting** - Sliding window algorithm prevents API throttling (default: 100 requests per 60 seconds)- **Smart Notifications** – Status change detection prevents notification spam (only notify on status changes)
+- **Metrics & Statistics** - Track check counts, success/fail rates, and status distributions via `/api/metrics` endpoint- **Request Deduplication** - Efficient caching reduces unnecessary HTTP requests- **Exponential Backoff Retry** – Automatic retry with backoff (1s → 2s → 4s → 8s) and jitter for transient failures
 
-- **Exponential Backoff Retry** - Automatic retry with backoff and jitter for transient failures
+- **Fault Isolation** - Circuit breakers prevent cascade failures
+
+- **Smart Timeouts** - Optimized timeouts (10s connect, 30s total) with DNS caching- **Rate Limiting** - Sliding window algorithm prevents API throttling (default: 100 requests per 60 seconds)- **Smart Notifications** – Status change detection prevents notification spam (only notify on status changes)
+
+- **Comprehensive Logging** - Python's `logging` module for better log management
+
+- **Adaptive Resilience** - Graceful degradation when external services fail- **Exponential Backoff Retry** - Automatic retry with backoff and jitter for transient failures
+
+- **Enhanced Validation** - Format validation for TestFlight IDs (8-12 alphanumeric characters) before network checks
 
 - **Smart Notifications** - Status change detection prevents notification spam (only notify on status changes)### Web Dashboard
 
+---
+
 - **Real-time Status** – Bot status, version, uptime, and monitoring statistics
+
+## Setup
 
 ### Web Dashboard- **Live Logs** – Recent activity with color-coded log levels and timestamps
 
+### Prerequisites
+
 - **Real-time Status** - Bot status, version, uptime, and monitoring statistics- **TestFlight ID Management** – Add/remove monitored apps through the web interface
 
-- **Live Logs** - Recent activity with color-coded log levels and timestamps- **Apprise URL Management** – Add/remove notification URLs dynamically
+- Python 3.8 or higher
 
-- **TestFlight ID Management** - Add/remove monitored apps through the web interface- **Mobile-Responsive Design** – Optimized for phones, tablets, and desktops
+- Install dependencies:- **Live Logs** - Recent activity with color-coded log levels and timestamps- **Apprise URL Management** – Add/remove notification URLs dynamically
 
-- **Apprise URL Management** - Add/remove notification URLs dynamically with service icons- **Interactive Cards** – Collapsible sections with clean plus/minus icons
 
-- **Mobile-Responsive Design** - Optimized for phones, tablets, and desktops- **Auto-refresh** – Dashboard updates every 30 seconds
 
-- **Interactive Cards** - Collapsible sections with clean icons- **RESTful API** – JSON APIs for status (`/api/status`), logs (`/api/logs`), health monitoring (`/api/health`), and metrics (`/api/metrics`)
-
-- **Auto-refresh** - Dashboard updates every 30 seconds- **Application Control** – Stop and restart the application directly from the web interface
-
-- **RESTful API** - JSON APIs for status, logs, health monitoring, and metrics- **Batch Operations** – Efficient bulk add/remove operations via `/api/testflight-ids/batch` endpoint
-
-- **Application Control** - Stop and restart the application directly from the web interface
-
-- **Batch Operations** - Efficient bulk add/remove operations via API endpoint### Robustness & Monitoring
-
-- **Health Check Endpoint** – Comprehensive system monitoring with cache stats, circuit breaker status, and HTTP session health
-
-### Robustness & Monitoring- **Metrics & Statistics** – Track check counts, success/fail rates, and status distributions via `/api/metrics` endpoint
-
-- **Health Check Endpoint** - Comprehensive system monitoring with cache stats, circuit breaker status, and HTTP session health- **Fault Isolation** – Circuit breakers prevent cascade failures
-
-- **Metrics & Statistics** - Track check counts, success/fail rates, and status distributions- **Smart Timeouts** – Optimized timeouts (10s connect, 30s total) with DNS caching
-
-- **Fault Isolation** - Circuit breakers prevent cascade failures- **Comprehensive Logging** – Python's `logging` module for better log management
-
-- **Smart Timeouts** - Optimized timeouts with DNS caching- **Adaptive Resilience** – Graceful degradation when external services fail
-
-- **Comprehensive Logging** - Python's logging module for better log management- **Enhanced Validation** – Format validation for TestFlight IDs (8-12 alphanumeric characters) before network checks
-
-- **Adaptive Resilience** - Graceful degradation when external services fail
-
-- **Enhanced Validation** - Format validation for TestFlight IDs before network checks---
-
-- **GitHub Update Checker** - Automatic monitoring for repository updates with notifications and manual check via APIUses **FastAPI** for the server, **Apprise** for notifications, and **aiohttp** for asynchronous HTTP requests.
-
-
-
-------
-
-
-
-## Setup## ✨ Features
-
-
-
-### Prerequisites✅ **TestFlight Monitoring** – Automatically checks TestFlight beta links for availability.  
-
-🔔 **Notifications** – Sends alerts using Apprise when slots open up, including app icons as attachments for supported services (e.g., Discord, Slack).  
-
-- Python 3.8 or higher❤️ **Heartbeat Notifications** – Sends periodic status updates to ensure the bot is active.  
-
-- Install dependencies:📜 **Logging** – Uses Python's `logging` module for better log management.  
-
-🛑 **Graceful Shutdown** – Cleans up resources properly on exit.  
-
-```bash🔧 **Environment Variable Validation** – Ensures required configurations are set before starting.  
-
-pip install -r requirements.txt🎨 **App Name Extraction** – Accurately extracts and displays app names from TestFlight pages.  
-
-```🌐 **Web Dashboard** – FastAPI-powered web interface with real-time status, logs, and monitoring statistics.  
-
-🔧 **Dynamic ID Management** – Add/remove TestFlight IDs through the web dashboard without restarting the application.  
-
-### Environment Variables📱 **Mobile-Friendly UI** – Responsive design that works perfectly on phones, tablets, and desktops.  
-
-🎛️ **Interactive Management** – Collapsible cards for organized TestFlight ID management.  
-
-Create a `.env` file in the project root with these values:📡 **RESTful API** – Complete API endpoints for status, logs, and TestFlight ID management.  
-
-🛑 **Web-based Application Control** – Stop and restart the application directly from the web dashboard.  
-
-```ini🎨 **Enhanced UI Aesthetics** – Modern gradient buttons with professional styling and responsive design.  
-
-# List of TestFlight IDs to monitor (comma-separated)🛡️ **Security Verified** – Repository confirmed to contain no actual secrets, only test/example data.  
-
-ID_LIST=abc123,def456,ghi789🏥 **Health Monitoring** – Comprehensive health check endpoint with system metrics and performance monitoring.  
-
-🚀 **HTTP Optimization** – Connection pooling, DNS caching, and keep-alive for 60-80% performance improvement.  
-
-# Apprise notification URLs (comma-separated for multiple services)⚡ **Circuit Breaker** – Automatic failure detection and recovery for external service resilience.  
-
-APPRISE_URL=mailto://user:password@smtp.example.com,discord://webhook_id/webhook_token🧠 **Smart Caching** – LRU caches with size limits prevent memory leaks while maintaining performance.  
-
-⚡ **Rate Limiting** – Prevents API throttling with configurable sliding window algorithm.  
-
-# Interval in milliseconds between checks🔄 **Retry Logic** – Exponential backoff with jitter handles transient failures gracefully.  
-
-INTERVAL_CHECK=10000📊 **Metrics Tracking** – Monitor check statistics, success rates, and status distributions.  
-
-📦 **Batch Operations** – Efficiently manage multiple TestFlight IDs in a single request.  
-
-# Optional: Heartbeat interval in hours (default: 6)✅ **Enhanced Validation** – Format checking ensures valid TestFlight IDs before processing.  
-
-HEARTBEAT_INTERVAL=6🧪 **Unit Tests** – Comprehensive test coverage with pytest for reliability.  
-
-🔄 **GitHub Update Checker** – Automatic monitoring for repository updates with notifications and manual check via API.
-
-# Optional: FastAPI server host (default: 0.0.0.0)
-
-FASTAPI_HOST=0.0.0.0---
-
-
-
-# Optional: FastAPI server port (default: random 8000-9000)## ✨ Features  
-
-FASTAPI_PORT=8080
-
-✅ **TestFlight Monitoring** – Automatically checks TestFlight beta links for availability.  
-
-# Optional: GitHub update checker configuration🔔 **Notifications** – Sends alerts using Apprise when slots open up, including app icons as attachments for supported services (e.g., Discord, Slack).  
-
-# GITHUB_REPO=klept0/TestFlight_Apprise_Notifier❤️ **Heartbeat Notifications** – Sends periodic status updates to ensure the bot is active.  
-
-# GITHUB_BRANCH=main📜 **Logging** – Uses Python’s `logging` module for better log management.  
-
-# GITHUB_CHECK_INTERVAL_HOURS=24  # Check every 24 hours (set to 0 to disable)🛑 **Graceful Shutdown** – Cleans up resources properly on exit.  
-
-```🔧 **Environment Variable Validation** – Ensures required configurations are set before starting.  
-
-🎨 **App Name Extraction** – Accurately extracts and displays app names from TestFlight pages.  
-
----
-
----
-
-## Running the Application
-
-## Application Control
-
-Start the script using:
-
-The TestFlight Apprise Notifier runs as a **single Python process** with multiple concurrent async tasks (monitoring, heartbeat, web server). The stop and restart functionality works as follows:
-
-```bash
-
-python main.py### Stop Functionality
-
-```
-
-- **Process**: Single-process application with async task coordination
-
-The FastAPI server will be accessible via the URL shown in the console, displaying the actual IP address (e.g., `http://192.168.1.100:8080`).- **Mechanism**: Sets a shutdown event that gracefully stops all running tasks
-
-- **Cleanup**: Properly closes HTTP connections and cleans up resources
-
----- **Notification**: Sends Apprise notification about the manual stop
-
-- **Result**: Clean shutdown without data loss
-
-## Application Control
-
-### Restart Functionality
-
-The TestFlight Apprise Notifier runs as a **single Python process** with multiple concurrent async tasks (monitoring, heartbeat, web server).
-
-- **Process**: Spawns a new Python process using `subprocess.Popen`
-
-### Stop Functionality- **Mechanism**: New instance starts immediately, then current instance shuts down
-
-- **State**: Configuration persists via `.env` file updates
-
-- **Process**: Single-process application with async task coordination- **Notification**: Sends Apprise notification about the restart
-
-- **Mechanism**: Sets a shutdown event that gracefully stops all running tasks- **Zero-downtime**: New process starts before old one stops
-
-- **Cleanup**: Properly closes HTTP connections and cleans up resources
-
-- **Notification**: Sends Apprise notification about the manual stop### Service Operation
-
-- **Result**: Clean shutdown without data loss
-
-- **Not a system service**: Runs as a regular Python application
-
-### Restart Functionality- **Manual control**: Use web dashboard buttons or send signals (Ctrl+C)
-
-- **Process management**: Can be managed with tools like `systemd`, `supervisor`, or `pm2`
-
-- **Process**: Spawns a new Python process using subprocess- **Resource efficient**: Single process with async I/O, minimal memory footprint
-
-- **Mechanism**: New instance starts immediately, then current instance shuts down
-
-- **State**: Configuration persists via .env file updates---
-
-- **Notification**: Sends Apprise notification about the restart
-
-- **Zero-downtime**: New process starts before old one stops## Setup
-
-
-
-### Service Operation### Prerequisites
-
-
-
-- **Not a system service**: Runs as a regular Python application- Python 3.8+
-
-- **Manual control**: Use web dashboard buttons or send signals (Ctrl+C)- Install dependencies:
-
-- **Process management**: Can be managed with tools like systemd, supervisor, or pm2
-
-- **Resource efficient**: Single process with async I/O, minimal memory footprint```bash
+```bash- **TestFlight ID Management** - Add/remove monitored apps through the web interface- **Mobile-Responsive Design** – Optimized for phones, tablets, and desktops
 
 pip install -r requirements.txt
 
----```
+```- **Apprise URL Management** - Add/remove notification URLs dynamically with service icons- **Interactive Cards** – Collapsible sections with clean plus/minus icons
 
 
 
-## Web Dashboard### Environment Variables
+### Environment Variables- **Mobile-Responsive Design** - Optimized for phones, tablets, and desktops- **Auto-refresh** – Dashboard updates every 30 seconds
 
 
 
-The web interface provides:Create a `.env` file in the project root with these values:  
+Create a `.env` file in the project root with these values:- **Interactive Cards** - Collapsible sections with clean icons- **RESTful API** – JSON APIs for status (`/api/status`), logs (`/api/logs`), health monitoring (`/api/health`), and metrics (`/api/metrics`)
 
 
 
-- **Real-time Status** - Bot status, version, uptime, and monitoring statistics```ini
+```ini- **Auto-refresh** - Dashboard updates every 30 seconds- **Application Control** – Stop and restart the application directly from the web interface
 
-- **Live Logs** - Recent activity with color-coded log levels and timestamps# List of TestFlight IDs to monitor (comma-separated)
+# List of TestFlight IDs to monitor (comma-separated)
 
-- **TestFlight ID Management** - Add/remove monitored apps through the web interfaceID_LIST=abc123,def456,ghi789  
-
-- **Apprise URL Management** - Add/remove notification URLs with service logos and icons
-
-- **Mobile-Responsive Design** - Optimized for phones, tablets, and desktops```ini
-
-- **Interactive Cards** - Collapsible sections with clean icons# List of TestFlight IDs to monitor (comma-separated)
-
-- **Auto-refresh** - Dashboard updates every 30 secondsID_LIST=abc123,def456,ghi789
-
-- **API Endpoints** - JSON APIs for status, logs, health, metrics, and updates
-
-# Apprise notification URLs (comma-separated for multiple services)
-
----APPRISE_URL=mailto://user:password@smtp.example.com,discord://webhook_id/webhook_token
+ID_LIST=abc123,def456,ghi789- **RESTful API** - JSON APIs for status, logs, health monitoring, and metrics- **Batch Operations** – Efficient bulk add/remove operations via `/api/testflight-ids/batch` endpoint
 
 
 
-## GitHub Update Checker# Interval in milliseconds between checks
+# Apprise notification URLs (comma-separated for multiple services)- **Application Control** - Stop and restart the application directly from the web interface
 
-INTERVAL_CHECK=10000
+APPRISE_URL=mailto://user:password@smtp.example.com,discord://webhook_id/webhook_token
 
-The application includes an automatic GitHub update checker that monitors the repository for new commits.
+- **Batch Operations** - Efficient bulk add/remove operations via API endpoint### Robustness & Monitoring
 
-# Optional: Heartbeat interval in hours (default: 6)
+# Interval in milliseconds between checks
 
-### FeaturesHEARTBEAT_INTERVAL=6
-
-
-
-- **Periodic Automatic Checks** - Runs every 24 hours by default (configurable)# Optional: FastAPI server host (default: 0.0.0.0)
-
-- **Manual Checks via API** - Trigger update checks on-demand using curlFASTAPI_HOST=0.0.0.0
-
-- **Smart Caching** - Avoids unnecessary API calls by caching results
-
-- **Notifications** - Sends Apprise notifications when updates are detected# Optional: FastAPI server port (default: random 8000-9000)
-
-- **Version Tracking** - Compares current version with latest GitHub commitFASTAPI_PORT=8080
+INTERVAL_CHECK=10000- **Health Check Endpoint** – Comprehensive system monitoring with cache stats, circuit breaker status, and HTTP session health
 
 
 
-### Manual Update Check# Optional: GitHub update checker configuration
+# Optional: Heartbeat interval in hours (default: 6)### Robustness & Monitoring- **Metrics & Statistics** – Track check counts, success/fail rates, and status distributions via `/api/metrics` endpoint
 
-# GITHUB_REPO=klept0/TestFlight_Apprise_Notifier
+HEARTBEAT_INTERVAL=6
 
-Check for updates via curl:# GITHUB_BRANCH=main
+- **Health Check Endpoint** - Comprehensive system monitoring with cache stats, circuit breaker status, and HTTP session health- **Fault Isolation** – Circuit breakers prevent cascade failures
 
-# GITHUB_CHECK_INTERVAL_HOURS=24  # Check every 24 hours (set to 0 to disable)
+# Optional: FastAPI server host (default: 0.0.0.0)
 
-```bash```
-
-# Check for updates (uses cache if available)
-
-curl http://localhost:8080/api/updates---
+FASTAPI_HOST=0.0.0.0- **Metrics & Statistics** - Track check counts, success/fail rates, and status distributions- **Smart Timeouts** – Optimized timeouts (10s connect, 30s total) with DNS caching
 
 
 
-# Force a fresh check (bypasses cache)## Running the Application
+# Optional: FastAPI server port (default: random 8000-9000)- **Fault Isolation** - Circuit breakers prevent cascade failures- **Comprehensive Logging** – Python's `logging` module for better log management
 
-curl http://localhost:8080/api/updates?force=true
+FASTAPI_PORT=8080
 
-```Start the script using:
+- **Smart Timeouts** - Optimized timeouts with DNS caching- **Adaptive Resilience** – Graceful degradation when external services fail
 
+# Optional: GitHub update checker configuration
 
+# GITHUB_REPO=klept0/TestFlight_Apprise_Notifier- **Comprehensive Logging** - Python's logging module for better log management- **Enhanced Validation** – Format validation for TestFlight IDs (8-12 alphanumeric characters) before network checks
 
-### Configuration```bash
+# GITHUB_BRANCH=main
 
-python main.py
-
-Configure update checking in your `.env` file:```
-
-
-
-```bashThe FastAPI server will be accessible via the URL shown in the console, displaying the actual IP address (e.g., `http://192.168.1.100:8080`).
-
-# Check every 24 hours (default), set to 0 to disable
-
-GITHUB_CHECK_INTERVAL_HOURS=24---
-
-
-
-# Monitor a custom repository (optional)## Web Dashboard
-
-GITHUB_REPO=yourusername/TestFlight_Apprise_Notifier
-
-GITHUB_BRANCH=mainThe web interface provides:
+# GITHUB_CHECK_INTERVAL_HOURS=24  # Check every 24 hours (set to 0 to disable)- **Adaptive Resilience** - Graceful degradation when external services fail
 
 ```
 
-- **Real-time Status** – Bot status, version, uptime, and monitoring statistics
+- **Enhanced Validation** - Format validation for TestFlight IDs before network checks---
 
-For complete documentation, see [GITHUB_UPDATE_CHECKER.md](GITHUB_UPDATE_CHECKER.md).- **Live Logs** – Recent activity with color-coded log levels and timestamps
+---
 
-- **TestFlight ID Management** – Add/remove monitored apps through the web interface
+- **GitHub Update Checker** - Automatic monitoring for repository updates with notifications and manual check via APIUses **FastAPI** for the server, **Apprise** for notifications, and **aiohttp** for asynchronous HTTP requests.
 
----- **Apprise URL Management** – Add/remove notification URLs dynamically
-
-- **Mobile-Responsive Design** – Optimized for phones, tablets, and desktops
-
-## Enhanced TestFlight Status Checking- **Interactive Cards** – Collapsible sections with clean plus/minus icons
-
-- **Auto-refresh** – Dashboard updates every 30 seconds
-
-The application includes an enhanced TestFlight status checking utility (`utils/testflight.py`) that provides:- **API Endpoints** – JSON APIs for status (`/api/status`), logs (`/api/logs`), and health (`/api/health`)
+## Running the Application
 
 
 
-### Features---
+Start the script using:
+
+------
+
+```bash
+
+python main.py
+
+```
+
+## Setup## ✨ Features
+
+The FastAPI server will be accessible via the URL shown in the console, displaying the actual IP address (e.g., `http://192.168.1.100:8080`).
 
 
 
-- **Structured Status Detection** - Uses TestFlightStatus enum (OPEN, FULL, CLOSED, UNKNOWN, ERROR)## GitHub Update Checker
+---
 
-- **Multiple Detection Patterns** - Robust text pattern matching for accurate status detection
+### Prerequisites✅ **TestFlight Monitoring** – Automatically checks TestFlight beta links for availability.  
 
-- **Optional Caching** - Reduce redundant requests with configurable TTL (default: 5 minutes)The application includes an automatic GitHub update checker that monitors the repository for new commits:
+## Application Control
 
-- **Better Error Handling** - Detailed error messages and categorization
+🔔 **Notifications** – Sends alerts using Apprise when slots open up, including app icons as attachments for supported services (e.g., Discord, Slack).  
 
-- **Async-First Design** - Efficient concurrent checking using shared HTTP sessions### Features
+The TestFlight Apprise Notifier runs as a **single Python process** with multiple concurrent async tasks (monitoring, heartbeat, web server). The stop and restart functionality works as follows:
 
-- **Structured Return Values** - Complete data including app name, status, errors, and cache info
+- Python 3.8 or higher❤️ **Heartbeat Notifications** – Sends periodic status updates to ensure the bot is active.  
 
-- **Periodic Automatic Checks** – Runs every 24 hours by default (configurable)
+### Stop Functionality
 
-### Enabling Status Caching- **Manual Checks via API** – Trigger update checks on-demand using curl
+- Install dependencies:📜 **Logging** – Uses Python's `logging` module for better log management.  
+
+- **Process** - Single-process application with async task coordination
+
+- **Mechanism** - Sets a shutdown event that gracefully stops all running tasks🛑 **Graceful Shutdown** – Cleans up resources properly on exit.  
+
+- **Cleanup** - Properly closes HTTP connections and cleans up resources
+
+- **Notification** - Sends Apprise notification about the manual stop```bash🔧 **Environment Variable Validation** – Ensures required configurations are set before starting.  
+
+- **Result** - Clean shutdown without data loss
+
+pip install -r requirements.txt🎨 **App Name Extraction** – Accurately extracts and displays app names from TestFlight pages.  
+
+### Restart Functionality
+
+```🌐 **Web Dashboard** – FastAPI-powered web interface with real-time status, logs, and monitoring statistics.  
+
+- **Process** - Spawns a new Python process using `subprocess.Popen`
+
+- **Mechanism** - New instance starts immediately, then current instance shuts down🔧 **Dynamic ID Management** – Add/remove TestFlight IDs through the web dashboard without restarting the application.  
+
+- **State** - Configuration persists via `.env` file updates
+
+- **Notification** - Sends Apprise notification about the restart### Environment Variables📱 **Mobile-Friendly UI** – Responsive design that works perfectly on phones, tablets, and desktops.  
+
+- **Zero-downtime** - New process starts before old one stops
+
+🎛️ **Interactive Management** – Collapsible cards for organized TestFlight ID management.  
+
+### Service Operation
+
+Create a `.env` file in the project root with these values:📡 **RESTful API** – Complete API endpoints for status, logs, and TestFlight ID management.  
+
+- **Not a system service** - Runs as a regular Python application
+
+- **Manual control** - Use web dashboard buttons or send signals (Ctrl+C)🛑 **Web-based Application Control** – Stop and restart the application directly from the web dashboard.  
+
+- **Process management** - Can be managed with tools like `systemd`, `supervisor`, or `pm2`
+
+- **Resource efficient** - Single process with async I/O, minimal memory footprint```ini🎨 **Enhanced UI Aesthetics** – Modern gradient buttons with professional styling and responsive design.  
+
+
+
+---# List of TestFlight IDs to monitor (comma-separated)🛡️ **Security Verified** – Repository confirmed to contain no actual secrets, only test/example data.  
+
+
+
+## Web DashboardID_LIST=abc123,def456,ghi789🏥 **Health Monitoring** – Comprehensive health check endpoint with system metrics and performance monitoring.  
+
+
+
+The web interface provides:🚀 **HTTP Optimization** – Connection pooling, DNS caching, and keep-alive for 60-80% performance improvement.  
+
+
+
+- **Real-time Status** - Bot status, version, uptime, and monitoring statistics# Apprise notification URLs (comma-separated for multiple services)⚡ **Circuit Breaker** – Automatic failure detection and recovery for external service resilience.  
+
+- **Live Logs** - Recent activity with color-coded log levels and timestamps
+
+- **TestFlight ID Management** - Add/remove monitored apps through the web interfaceAPPRISE_URL=mailto://user:password@smtp.example.com,discord://webhook_id/webhook_token🧠 **Smart Caching** – LRU caches with size limits prevent memory leaks while maintaining performance.  
+
+- **Apprise URL Management** - Add/remove notification URLs with service logos
+
+- **Mobile-Responsive Design** - Optimized for phones, tablets, and desktops⚡ **Rate Limiting** – Prevents API throttling with configurable sliding window algorithm.  
+
+- **Interactive Cards** - Collapsible sections with clean icons
+
+- **Auto-refresh** - Dashboard updates every 30 seconds# Interval in milliseconds between checks🔄 **Retry Logic** – Exponential backoff with jitter handles transient failures gracefully.  
+
+- **Application Control** - Stop and restart buttons with confirmation dialogs
+
+INTERVAL_CHECK=10000📊 **Metrics Tracking** – Monitor check statistics, success rates, and status distributions.  
+
+### Apprise Service Icons
+
+📦 **Batch Operations** – Efficiently manage multiple TestFlight IDs in a single request.  
+
+The dashboard displays official service icons for configured Apprise notification URLs instead of showing long text strings. This provides:
+
+# Optional: Heartbeat interval in hours (default: 6)✅ **Enhanced Validation** – Format checking ensures valid TestFlight IDs before processing.  
+
+- **Visual Recognition** - Instantly identify services by their logos
+
+- **Cleaner UI** - Service name and icon instead of full URL textHEARTBEAT_INTERVAL=6🧪 **Unit Tests** – Comprehensive test coverage with pytest for reliability.  
+
+- **Better Organization** - Two-line card layout with masked credentials
+
+- **40+ Services Supported** - Discord, Slack, Telegram, Signal, Pushover, and many more🔄 **GitHub Update Checker** – Automatic monitoring for repository updates with notifications and manual check via API.
+
+
+
+For technical details, see [APPRISE_ICON_DISPLAY.md](APPRISE_ICON_DISPLAY.md).# Optional: FastAPI server host (default: 0.0.0.0)
+
+
+
+---FASTAPI_HOST=0.0.0.0---
+
+
+
+## GitHub Update Checker
+
+
+
+The application includes an automatic GitHub update checker that monitors the repository for new commits.# Optional: FastAPI server port (default: random 8000-9000)## ✨ Features  
+
+
+
+### FeaturesFASTAPI_PORT=8080
+
+
+
+- **Periodic Automatic Checks** - Runs every 24 hours by default (configurable)✅ **TestFlight Monitoring** – Automatically checks TestFlight beta links for availability.  
+
+- **Manual Checks via API** - Trigger update checks on-demand using curl
+
+- **Smart Caching** - Avoids unnecessary API calls by caching results# Optional: GitHub update checker configuration🔔 **Notifications** – Sends alerts using Apprise when slots open up, including app icons as attachments for supported services (e.g., Discord, Slack).  
+
+- **Notifications** - Sends Apprise notifications when updates are detected
+
+- **Version Tracking** - Compares current version with latest GitHub commit# GITHUB_REPO=klept0/TestFlight_Apprise_Notifier❤️ **Heartbeat Notifications** – Sends periodic status updates to ensure the bot is active.  
+
+
+
+### Manual Update Check# GITHUB_BRANCH=main📜 **Logging** – Uses Python’s `logging` module for better log management.  
+
+
+
+Check for updates via curl:# GITHUB_CHECK_INTERVAL_HOURS=24  # Check every 24 hours (set to 0 to disable)🛑 **Graceful Shutdown** – Cleans up resources properly on exit.  
+
+
+
+```bash```🔧 **Environment Variable Validation** – Ensures required configurations are set before starting.  
+
+# Check for updates (uses cache if available)
+
+curl http://localhost:8080/api/updates🎨 **App Name Extraction** – Accurately extracts and displays app names from TestFlight pages.  
+
+
+
+# Force a fresh check (bypasses cache)---
+
+curl http://localhost:8080/api/updates?force=true
+
+```---
+
+
+
+### Configuration## Running the Application
+
+
+
+Configure update checking in your `.env` file:## Application Control
+
+
+
+```bashStart the script using:
+
+# Check every 24 hours (default), set to 0 to disable
+
+GITHUB_CHECK_INTERVAL_HOURS=24The TestFlight Apprise Notifier runs as a **single Python process** with multiple concurrent async tasks (monitoring, heartbeat, web server). The stop and restart functionality works as follows:
+
+
+
+# Monitor a custom repository (optional)```bash
+
+GITHUB_REPO=yourusername/TestFlight_Apprise_Notifier
+
+GITHUB_BRANCH=mainpython main.py### Stop Functionality
+
+```
+
+```
+
+For complete documentation, see [GITHUB_UPDATE_CHECKER.md](GITHUB_UPDATE_CHECKER.md).
+
+- **Process**: Single-process application with async task coordination
+
+---
+
+The FastAPI server will be accessible via the URL shown in the console, displaying the actual IP address (e.g., `http://192.168.1.100:8080`).- **Mechanism**: Sets a shutdown event that gracefully stops all running tasks
+
+## API Endpoints
+
+- **Cleanup**: Properly closes HTTP connections and cleans up resources
+
+### Status & Monitoring
+
+---- **Notification**: Sends Apprise notification about the manual stop
+
+- `GET /` - Web dashboard interface
+
+- `GET /api/status` - Get current bot status, version, uptime, and statistics- **Result**: Clean shutdown without data loss
+
+- `GET /api/logs` - Retrieve recent log entries with filtering options
+
+- `GET /api/health` - Comprehensive health check with cache stats and circuit breaker status## Application Control
+
+- `GET /api/metrics` - Detailed metrics including check counts, success rates, and status distributions
+
+- `GET /api/updates` - Check for GitHub updates (supports `?force=true` parameter)### Restart Functionality
+
+
+
+### TestFlight ID ManagementThe TestFlight Apprise Notifier runs as a **single Python process** with multiple concurrent async tasks (monitoring, heartbeat, web server).
+
+
+
+- `POST /api/testflight-ids` - Add a new TestFlight ID to monitor- **Process**: Spawns a new Python process using `subprocess.Popen`
+
+  - Request body: `{"testflight_id": "abc123"}`
+
+- `DELETE /api/testflight-ids` - Remove a TestFlight ID from monitoring### Stop Functionality- **Mechanism**: New instance starts immediately, then current instance shuts down
+
+  - Request body: `{"testflight_id": "abc123"}`
+
+- `POST /api/testflight-ids/batch` - Batch add multiple TestFlight IDs- **State**: Configuration persists via `.env` file updates
+
+  - Request body: `{"testflight_ids": ["abc123", "def456", "ghi789"]}`
+
+- `DELETE /api/testflight-ids/batch` - Batch remove multiple TestFlight IDs- **Process**: Single-process application with async task coordination- **Notification**: Sends Apprise notification about the restart
+
+  - Request body: `{"testflight_ids": ["abc123", "def456"]}`
+
+- **Mechanism**: Sets a shutdown event that gracefully stops all running tasks- **Zero-downtime**: New process starts before old one stops
+
+### Apprise URL Management
+
+- **Cleanup**: Properly closes HTTP connections and cleans up resources
+
+- `GET /api/apprise-urls` - Get all configured Apprise URLs with service icons
+
+- `POST /api/apprise-urls` - Add a new Apprise notification URL- **Notification**: Sends Apprise notification about the manual stop### Service Operation
+
+  - Request body: `{"apprise_url": "discord://webhook_id/webhook_token"}`
+
+- `DELETE /api/apprise-urls` - Remove an Apprise notification URL- **Result**: Clean shutdown without data loss
+
+  - Request body: `{"apprise_url": "discord://webhook_id/webhook_token"}`
+
+- **Not a system service**: Runs as a regular Python application
+
+### Application Control
+
+### Restart Functionality- **Manual control**: Use web dashboard buttons or send signals (Ctrl+C)
+
+- `POST /api/stop` - Gracefully stop the application
+
+- `POST /api/restart` - Restart the application (spawns new process)- **Process management**: Can be managed with tools like `systemd`, `supervisor`, or `pm2`
+
+
+
+---- **Process**: Spawns a new Python process using subprocess- **Resource efficient**: Single process with async I/O, minimal memory footprint
+
+
+
+## Docker Support- **Mechanism**: New instance starts immediately, then current instance shuts down
+
+
+
+The application can be deployed using Docker for easier containerization and deployment.- **State**: Configuration persists via .env file updates---
+
+
+
+### Quick Start with Docker Compose- **Notification**: Sends Apprise notification about the restart
+
+
+
+```bash- **Zero-downtime**: New process starts before old one stops## Setup
+
+# Start the application
+
+docker-compose up -d
+
+
+
+# View logs### Service Operation### Prerequisites
+
+docker-compose logs -f
+
+
+
+# Stop the application
+
+docker-compose down- **Not a system service**: Runs as a regular Python application- Python 3.8+
+
+```
+
+- **Manual control**: Use web dashboard buttons or send signals (Ctrl+C)- Install dependencies:
+
+### Manual Docker Build
+
+- **Process management**: Can be managed with tools like systemd, supervisor, or pm2
+
+```bash
+
+# Build the image- **Resource efficient**: Single process with async I/O, minimal memory footprint```bash
+
+docker build -t testflight-notifier .
+
+pip install -r requirements.txt
+
+# Run the container
+
+docker run -d \---```
+
+  --name testflight-notifier \
+
+  -p 8080:8080 \
+
+  --env-file .env \
+
+  testflight-notifier## Web Dashboard### Environment Variables
+
+```
+
+
+
+For complete Docker documentation, see [DOCKER.md](DOCKER.md).
+
+The web interface provides:Create a `.env` file in the project root with these values:  
+
+---
+
+
+
+## Testing
+
+- **Real-time Status** - Bot status, version, uptime, and monitoring statistics```ini
+
+Run the test suite using pytest:
+
+- **Live Logs** - Recent activity with color-coded log levels and timestamps# List of TestFlight IDs to monitor (comma-separated)
+
+```bash
+
+# Install test dependencies- **TestFlight ID Management** - Add/remove monitored apps through the web interfaceID_LIST=abc123,def456,ghi789  
+
+pip install -r tests/requirements-test.txt
+
+- **Apprise URL Management** - Add/remove notification URLs with service logos and icons
+
+# Run all tests
+
+pytest tests/- **Mobile-Responsive Design** - Optimized for phones, tablets, and desktops```ini
+
+
+
+# Run with coverage report- **Interactive Cards** - Collapsible sections with clean icons# List of TestFlight IDs to monitor (comma-separated)
+
+pytest tests/ --cov=. --cov-report=html
+
+- **Auto-refresh** - Dashboard updates every 30 secondsID_LIST=abc123,def456,ghi789
+
+# Run specific test file
+
+pytest tests/test_testflight.py- **API Endpoints** - JSON APIs for status, logs, health, metrics, and updates
+
+```
+
+# Apprise notification URLs (comma-separated for multiple services)
+
+The test suite includes:
+
+---APPRISE_URL=mailto://user:password@smtp.example.com,discord://webhook_id/webhook_token
+
+- Unit tests for TestFlight status checking
+
+- Tests for app name extraction
+
+- Validation tests for TestFlight ID format
+
+- Mock-based tests for external API calls## GitHub Update Checker# Interval in milliseconds between checks
+
+
+
+---INTERVAL_CHECK=10000
+
+
+
+## Configuration DetailsThe application includes an automatic GitHub update checker that monitors the repository for new commits.
+
+
+
+### Rate Limiting# Optional: Heartbeat interval in hours (default: 6)
+
+
+
+Configure rate limiting to prevent API throttling:### FeaturesHEARTBEAT_INTERVAL=6
+
+
+
+```python
+
+# In main.py or .env
+
+RATE_LIMIT_REQUESTS=100  # Maximum requests- **Periodic Automatic Checks** - Runs every 24 hours by default (configurable)# Optional: FastAPI server host (default: 0.0.0.0)
+
+RATE_LIMIT_WINDOW=60     # Time window in seconds
+
+```- **Manual Checks via API** - Trigger update checks on-demand using curlFASTAPI_HOST=0.0.0.0
+
+
+
+### Circuit Breaker- **Smart Caching** - Avoids unnecessary API calls by caching results
+
+
+
+Configure circuit breaker thresholds:- **Notifications** - Sends Apprise notifications when updates are detected# Optional: FastAPI server port (default: random 8000-9000)
+
+
+
+```python- **Version Tracking** - Compares current version with latest GitHub commitFASTAPI_PORT=8080
+
+# In main.py
+
+CIRCUIT_BREAKER_THRESHOLD=5    # Failures before opening
+
+CIRCUIT_BREAKER_TIMEOUT=300    # Timeout in seconds (5 minutes)
+
+```### Manual Update Check# Optional: GitHub update checker configuration
+
+
+
+### Caching# GITHUB_REPO=klept0/TestFlight_Apprise_Notifier
+
+
+
+Configure caching behavior:Check for updates via curl:# GITHUB_BRANCH=main
+
+
+
+```python# GITHUB_CHECK_INTERVAL_HOURS=24  # Check every 24 hours (set to 0 to disable)
+
+# In main.py or .env
+
+CACHE_TTL=300           # Cache time-to-live in seconds```bash```
+
+APP_NAME_CACHE_SIZE=100 # Maximum cache entries
+
+```# Check for updates (uses cache if available)
+
+
+
+---curl http://localhost:8080/api/updates---
+
+
+
+## Logging
+
+
+
+The application uses Python's `logging` module with color-coded output:# Force a fresh check (bypasses cache)## Running the Application
+
+
+
+- **INFO** - Normal operational messages (green)curl http://localhost:8080/api/updates?force=true
+
+- **WARNING** - Warning messages (yellow)
+
+- **ERROR** - Error messages (red)```Start the script using:
+
+- **DEBUG** - Detailed diagnostic information
+
+
+
+Logs are displayed in:
+
+### Configuration```bash
+
+- Console output (with colors)
+
+- Web dashboard (last 100 entries)python main.py
+
+- API endpoint (`/api/logs`)
+
+Configure update checking in your `.env` file:```
+
+---
+
+
+
+## Apprise URL Formats
+
+```bashThe FastAPI server will be accessible via the URL shown in the console, displaying the actual IP address (e.g., `http://192.168.1.100:8080`).
+
+Apprise supports many notification services. Here are some common examples:
+
+# Check every 24 hours (default), set to 0 to disable
+
+```ini
+
+# DiscordGITHUB_CHECK_INTERVAL_HOURS=24---
+
+APPRISE_URL=discord://webhook_id/webhook_token
+
+
+
+# Slack
+
+APPRISE_URL=slack://TokenA/TokenB/TokenC# Monitor a custom repository (optional)## Web Dashboard
+
+
+
+# TelegramGITHUB_REPO=yourusername/TestFlight_Apprise_Notifier
+
+APPRISE_URL=tgram://bot_token/chat_id
+
+GITHUB_BRANCH=mainThe web interface provides:
+
+# Email (SMTP)
+
+APPRISE_URL=mailto://user:password@smtp.example.com```
+
+
+
+# Multiple services (comma-separated)- **Real-time Status** – Bot status, version, uptime, and monitoring statistics
+
+APPRISE_URL=discord://webhook_id/webhook_token,tgram://bot_token/chat_id
+
+```For complete documentation, see [GITHUB_UPDATE_CHECKER.md](GITHUB_UPDATE_CHECKER.md).- **Live Logs** – Recent activity with color-coded log levels and timestamps
+
+
+
+For a complete list of supported services, visit the [Apprise documentation](https://github.com/caronc/apprise).- **TestFlight ID Management** – Add/remove monitored apps through the web interface
+
+
+
+------- **Apprise URL Management** – Add/remove notification URLs dynamically
+
+
+
+## License- **Mobile-Responsive Design** – Optimized for phones, tablets, and desktops
+
+
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.## Enhanced TestFlight Status Checking- **Interactive Cards** – Collapsible sections with clean plus/minus icons
+
+
+
+---- **Auto-refresh** – Dashboard updates every 30 seconds
+
+
+
+## ChangelogThe application includes an enhanced TestFlight status checking utility (`utils/testflight.py`) that provides:- **API Endpoints** – JSON APIs for status (`/api/status`), logs (`/api/logs`), and health (`/api/health`)
+
+
+
+For a detailed history of changes, see [CHANGELOG.md](CHANGELOG.md).
+
+
+
+---### Features---
+
+
+
+## Contributing
+
+
+
+Contributions are welcome! Please feel free to submit issues or pull requests.- **Structured Status Detection** - Uses TestFlightStatus enum (OPEN, FULL, CLOSED, UNKNOWN, ERROR)## GitHub Update Checker
+
+
+
+---- **Multiple Detection Patterns** - Robust text pattern matching for accurate status detection
+
+
+
+## Acknowledgments- **Optional Caching** - Reduce redundant requests with configurable TTL (default: 5 minutes)The application includes an automatic GitHub update checker that monitors the repository for new commits:
+
+
+
+- **FastAPI** - Modern web framework for building APIs- **Better Error Handling** - Detailed error messages and categorization
+
+- **Apprise** - Universal notification library supporting 90+ services
+
+- **aiohttp** - Asynchronous HTTP client/server framework- **Async-First Design** - Efficient concurrent checking using shared HTTP sessions### Features
+
+
+
+---- **Structured Return Values** - Complete data including app name, status, errors, and cache info
+
+
+
+## Support- **Periodic Automatic Checks** – Runs every 24 hours by default (configurable)
+
+
+
+If you encounter any issues or have questions, please open an issue on the GitHub repository.### Enabling Status Caching- **Manual Checks via API** – Trigger update checks on-demand using curl
+
 
 - **Smart Caching** – Avoids unnecessary API calls by caching results
 
