@@ -151,6 +151,9 @@ APPRISE_URL=mailto://user:password@smtp.example.com,discord://webhook_id/webhook
 # Interval in milliseconds between checks
 INTERVAL_CHECK=10000
 
+# Optional: Heartbeat interval in hours (default: 6)
+HEARTBEAT_INTERVAL=6
+
 # Optional: FastAPI server host (default: 0.0.0.0)
 FASTAPI_HOST=0.0.0.0
 
@@ -255,7 +258,13 @@ The application logs messages in the console with timestamps and log levels:
 
 ## Heartbeat Notifications
 
-To confirm the bot is running, it sends a **heartbeat notification every 6 hours**.
+To confirm the bot is running, it sends a **heartbeat notification** periodically (default: every 6 hours).
+
+You can customize the heartbeat interval by setting the `HEARTBEAT_INTERVAL` environment variable (in hours):
+
+```ini
+HEARTBEAT_INTERVAL=12  # Send heartbeat every 12 hours
+```
 
 Example Heartbeat Message:
 

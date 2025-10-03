@@ -266,7 +266,10 @@ apprise_urls_raw = [
     for url in apprise_url_raw.replace("\n", ",").split(",")
     if url.strip()
 ]
-HEARTBEAT_INTERVAL = 6 * 60 * 60  # 6 hours in seconds
+
+# Heartbeat interval (default: 6 hours)
+# Can be configured via HEARTBEAT_INTERVAL environment variable (in hours)
+HEARTBEAT_INTERVAL = int(os.getenv("HEARTBEAT_INTERVAL", "6")) * 60 * 60  # Convert hours to seconds
 
 # Configure logging
 format_str = f"%(asctime)s - %(levelname)s - %(message)s [v{__version__}]"
@@ -2037,29 +2040,49 @@ async def fetch_testflight_status(session, tf_id):
 
 async def watch():
     """Check all TestFlight links."""
-    current_ids = get_current_id_list()
-    session = await get_http_session()
-    tasks = [fetch_testflight_status(session, tf_id) for tf_id in current_ids]
-    await asyncio.gather(*tasks)
+    try:
+        current_ids = get_current_id_list()
+        session = await get_http_session()
+        tasks = [fetch_testflight_status(session, tf_id) for tf_id in current_ids]
+        await asyncio.gather(*tasks, return_exceptions=True)
+    except asyncio.CancelledError:
+        logging.debug("Watch cycle cancelled during shutdown")
+        raise
+    except Exception as e:
+        logging.error(f"Error in watch cycle: {e}")
 
 
 async def heartbeat():
     """Send periodic heartbeat notifications."""
-    while True:
-        current_time = format_datetime(datetime.now())
-        message = f"Heartbeat - {current_time}"
-        send_notification(message, apobj)
-        print_green(message)
-        await asyncio.sleep(HEARTBEAT_INTERVAL)
+    try:
+        while True:
+            current_time = format_datetime(datetime.now())
+            message = f"Heartbeat - {current_time}"
+            send_notification(message, apobj)
+            print_green(message)
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
+    except asyncio.CancelledError:
+        logging.info("Heartbeat task cancelled during shutdown")
+        raise  # Re-raise to signal proper cancellation
+    except Exception as e:
+        logging.error(f"Error in heartbeat task: {e}")
+        raise
 
 
 async def start_watching():
     """Continuously check TestFlight links."""
-    # Add small delay to ensure server starts first
-    await asyncio.sleep(2)
-    while not shutdown_event.is_set():
-        await watch()
-        await asyncio.sleep(SLEEP_TIME / 1000)  # Convert ms to seconds
+    try:
+        # Add small delay to ensure server starts first
+        await asyncio.sleep(2)
+        while not shutdown_event.is_set():
+            await watch()
+            await asyncio.sleep(SLEEP_TIME / 1000)  # Convert ms to seconds
+    except asyncio.CancelledError:
+        logging.info("Watching task cancelled during shutdown")
+        raise  # Re-raise to signal proper cancellation
+    except Exception as e:
+        logging.error(f"Error in watching task: {e}")
+        raise
 
 
 async def start_fastapi():
