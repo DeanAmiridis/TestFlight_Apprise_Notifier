@@ -256,7 +256,15 @@ load_dotenv()
 TESTFLIGHT_URL = "https://testflight.apple.com/join/"
 FULL_TEXT = "This beta is full."
 NOT_OPEN_TEXT = "This beta isn't accepting any new testers right now."
-id_list_raw = os.getenv("ID_LIST", "").split(",")
+
+# Parse ID_LIST (supporting multi-line format)
+id_list_raw_value = get_multiline_env_value("ID_LIST")
+id_list_raw = [
+    tf_id.strip().rstrip(",")
+    for tf_id in id_list_raw_value.replace("\n", ",").split(",")
+    if tf_id.strip()
+]
+
 SLEEP_TIME = int(os.getenv("INTERVAL_CHECK", "10000"))  # in ms
 TITLE_REGEX = re.compile(r"Join the (.+) beta - TestFlight - Apple")
 
@@ -397,28 +405,46 @@ def update_env_file(key: str, new_values: list[str]):
         with open(env_path, "r") as f:
             lines = f.readlines()
 
-        # Find and update the key line
+        # Find and update the key line, removing old continuation lines
         updated = False
-        for i, line in enumerate(lines):
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
             if line.startswith(f"{key}="):
-                # Write each URL on its own line with a comma
+                # Found the key, remove this line and all continuation lines
+                lines.pop(i)
+                
+                # Remove continuation lines (lines that don't start with a key)
+                while i < len(lines):
+                    next_line = lines[i].strip()
+                    # Stop if we hit another key or empty line
+                    if not next_line or next_line.startswith("#") or "=" in next_line:
+                        break
+                    # This is a continuation line, remove it
+                    lines.pop(i)
+                
+                # Insert new values at this position
                 if new_values:
-                    lines[i] = f"{key}={new_values[0]},\n"
-                    # Insert additional lines after the first one
-                    for j, url in enumerate(new_values[1:], 1):
-                        lines.insert(i + j, f"{url},\n")
+                    # Write first value on the key line
+                    lines.insert(i, f"{key}={new_values[0]},\n")
+                    # Write remaining values as continuation lines
+                    for j, value in enumerate(new_values[1:], 1):
+                        lines.insert(i + j, f"{value},\n")
                 else:
-                    lines[i] = f"{key}=\n"
+                    # Empty value
+                    lines.insert(i, f"{key}=\n")
+                
                 updated = True
                 break
+            i += 1
 
         if not updated:
             # Add the key if it doesn't exist
             if new_values:
                 lines.append(f"{key}={new_values[0]},\n")
                 # Add additional lines
-                for url in new_values[1:]:
-                    lines.append(f"{url},\n")
+                for value in new_values[1:]:
+                    lines.append(f"{value},\n")
             else:
                 lines.append(f"{key}=\n")
 
