@@ -1,53 +1,76 @@
-# 📄 Changelog
+# Changelog
 
-## 🚀 v1.0.5c - September 24, 2025
+## v1.0.5e - October 3, 2025
 
-### 🎉 New Features
-- 🏥 **Health Check Endpoint** – `/api/health` provides comprehensive system monitoring with cache stats, circuit breaker status, and HTTP session health
-- 🔄 **HTTP Connection Pooling** – Shared aiohttp session with connection reuse, DNS caching, and keep-alive connections for 60-80% performance improvement
-- ⚡ **Circuit Breaker Pattern** – Automatic failure detection and recovery for external services with configurable thresholds
-- 🧠 **LRU Cache with Size Limits** – Bounded caches (100 entries each) for app names and icons to prevent memory leaks
-- 🧹 **Resource Cleanup** – Proper HTTP session cleanup on shutdown to prevent connection leaks
+### New Features
+- **GitHub Update Checker** - Automatic monitoring for repository updates with configurable intervals
+- **Apprise Service Icons** - Display official service logos in web UI instead of long URL text strings
+- **Manual Update Check API** - `/api/updates` endpoint for on-demand update checks via curl
+- **Service Icon Mapping** - Support for 40+ notification services with official logos from CDN
 
-### 🛠 Performance Optimizations
-- 🚀 **Connection Reuse** – TCP connection pooling reduces latency by ~70% and minimizes network overhead
-- 💾 **Memory Management** – LRU cache eviction prevents unlimited memory growth
-- 🛡️ **Fault Isolation** – Circuit breakers prevent cascade failures and reduce load on failing services
-- 📊 **Smart Timeouts** – Optimized timeouts (10s connect, 30s total) with DNS caching (5 minutes)
-- 🔄 **Request Deduplication** – Efficient caching reduces redundant HTTP requests
+### Improvements
+- **Cleaner Web UI** - Apprise URLs now display with service name and icon instead of full text
+- **Enhanced Security** - Credentials masked in UI display (shows `***` instead of sensitive data)
+- **Better Visual Hierarchy** - Two-line card layout for notification services
+- **Mobile-Friendly Icons** - Responsive service logos that scale appropriately
+- **Documentation Cleanup** - Removed unnecessary implementation and planning documentation files
 
-### 🛡️ Robustness Enhancements
-- 🏥 **System Monitoring** – Health endpoint provides real-time metrics for monitoring systems
-- 🔒 **Failure Recovery** – Circuit breaker auto-resets after 5-minute timeout
-- 📈 **Adaptive Resilience** – Graceful degradation when external services fail
-- 📊 **Observability** – Comprehensive logging of circuit breaker states and cache performance
-- 🧹 **Clean Shutdown** – Proper resource disposal prevents hanging connections
-
-### 🐞 Bug Fixes
-- 🐛 **Memory Leaks** – Fixed unlimited cache growth that could cause memory issues over time
-- 🐛 **Connection Exhaustion** – Resolved potential connection pool exhaustion with proper session management
-- 🐛 **Cascade Failures** – Prevented hammering of failed services with circuit breaker implementation
+### Documentation
+- **README Refresh** - Complete rewrite without emojis for cleaner, more professional appearance
+- **Version Bump** - Updated from v1.0.5d to v1.0.5e
+- **Icon Documentation** - Added APPRISE_ICON_DISPLAY.md for service icon feature
+- **Update Checker Guide** - Added GITHUB_UPDATE_CHECKER.md for update monitoring
 
 ---
 
-## 🚀 v1.0.5b - September 24, 2025
+## v1.0.5c - September 24, 2025
 
-### 🎉 New Features
-- 🛑 **Web-based Application Control** – Stop and restart the application directly from the web dashboard
-- 🔄 **Application Restart Functionality** – Graceful restart with subprocess management for code updates
-- 🎨 **Enhanced Control Button UI** – Beautiful gradient buttons with hover effects and responsive design
-- 🛡️ **Security Verification** – Repository confirmed to contain no actual secrets, only test/example data
-- ⚙️ **Dedicated Control Section** – Professional application control interface with confirmation dialogs
+### New Features
+- **Health Check Endpoint** - `/api/health` provides comprehensive system monitoring with cache stats, circuit breaker status, and HTTP session health
+- **HTTP Connection Pooling** - Shared aiohttp session with connection reuse, DNS caching, and keep-alive connections for 60-80% performance improvement
+- **Circuit Breaker Pattern** - Automatic failure detection and recovery for external services with configurable thresholds
+- **LRU Cache with Size Limits** - Bounded caches (100 entries each) for app names and icons to prevent memory leaks
+- **Resource Cleanup** - Proper HTTP session cleanup on shutdown to prevent connection leaks
 
-### 🛠 Improvements
-- 🎨 **Aesthetic Button Design** – Modern gradient backgrounds, shadows, and smooth animations
-- 📱 **Responsive Control Interface** – Optimized button layout for desktop, tablet, and mobile devices
-- 🔒 **Enhanced Error Handling** – Fixed bare `except:` clauses with proper exception types
-- 🔔 **Control Notifications** – Apprise notifications sent when application is stopped or restarted
-- 🎯 **Visual Hierarchy** – Dedicated "Application Control" section with proper spacing and styling
+### Performance Optimizations
+- **Connection Reuse** - TCP connection pooling reduces latency by ~70% and minimizes network overhead
+- **Memory Management** - LRU cache eviction prevents unlimited memory growth
+- **Fault Isolation** - Circuit breakers prevent cascade failures and reduce load on failing services
+- **Smart Timeouts** - Optimized timeouts (10s connect, 30s total) with DNS caching (5 minutes)
+- **Request Deduplication** - Efficient caching reduces redundant HTTP requests
 
-### 🐞 Bug Fixes
-- 🐛 **Exception Handling** – Replaced bare `except:` clauses with specific `Exception` types
+### Robustness Enhancements
+- **System Monitoring** - Health endpoint provides real-time metrics for monitoring systems
+- **Failure Recovery** - Circuit breaker auto-resets after 5-minute timeout
+- **Adaptive Resilience** - Graceful degradation when external services fail
+- **Observability** - Comprehensive logging of circuit breaker states and cache performance
+- **Clean Shutdown** - Proper resource disposal prevents hanging connections
+
+### Bug Fixes
+- **Memory Leaks** - Fixed unlimited cache growth that could cause memory issues over time
+- **Connection Exhaustion** - Resolved potential connection pool exhaustion with proper session management
+- **Cascade Failures** - Prevented hammering of failed services with circuit breaker implementation
+
+---
+
+## v1.0.5b - September 24, 2025
+
+### New Features
+- **Web-based Application Control** - Stop and restart the application directly from the web dashboard
+- **Application Restart Functionality** - Graceful restart with subprocess management for code updates
+- **Enhanced Control Button UI** - Beautiful gradient buttons with hover effects and responsive design
+- **Security Verification** - Repository confirmed to contain no actual secrets, only test/example data
+- **Dedicated Control Section** - Professional application control interface with confirmation dialogs
+
+### Improvements
+- **Aesthetic Button Design** - Modern gradient backgrounds, shadows, and smooth animations
+- **Responsive Control Interface** - Optimized button layout for desktop, tablet, and mobile devices
+- **Enhanced Error Handling** - Fixed bare `except:` clauses with proper exception types
+- **Control Notifications** - Apprise notifications sent when application is stopped or restarted
+- **Visual Hierarchy** - Dedicated "Application Control" section with proper spacing and styling
+
+### Bug Fixes
+- **Exception Handling** - Replaced bare `except:` clauses with specific `Exception` types
 - 🐛 **UI Layout Issues** – Fixed control buttons causing layout shifts by moving them outside grid containers
 - 🐛 **Button Responsiveness** – Improved button styling and positioning across all screen sizes
 

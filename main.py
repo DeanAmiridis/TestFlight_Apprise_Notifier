@@ -19,6 +19,7 @@ from fastapi.templating import Jinja2Templates
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from datetime import datetime
+from typing import Optional, Dict, Any
 from utils.notifications import send_notification, send_notification_async
 from utils.formatting import (
     format_datetime,
@@ -49,9 +50,18 @@ _circuit_breaker_timeout = 300  # 5 minutes
 _http_session = None
 _session_lock = threading.Lock()
 
+# GitHub repository configuration (override via environment variables)
+GITHUB_REPO = os.getenv("GITHUB_REPO", "klept0/TestFlight_Apprise_Notifier")
+GITHUB_BRANCH = os.getenv("GITHUB_BRANCH", "main")
+GITHUB_CHECK_INTERVAL = int(os.getenv("GITHUB_CHECK_INTERVAL_HOURS", "24"))
+
 # Status tracking for change notifications
 _previous_status = {}  # tf_id -> TestFlightStatus
 _status_lock = threading.Lock()
+
+# GitHub update check tracking
+_last_update_check: Optional[Dict[str, Any]] = None
+_update_check_lock = threading.Lock()
 
 
 class MetricsCollector:
@@ -202,7 +212,7 @@ async def get_http_session() -> aiohttp.ClientSession:
 
 
 # Version
-__version__ = "1.0.5d"
+__version__ = "1.0.5e"
 
 
 def get_multiline_env_value(key: str) -> str:
@@ -422,6 +432,221 @@ def get_current_apprise_urls():
     """Thread-safe function to get current Apprise URLs list."""
     with apprise_urls_lock:
         return current_apprise_urls.copy()
+
+
+def get_apprise_service_icon(url: str) -> Dict[str, str]:
+    """
+    Get service icon URL and name for an Apprise URL.
+
+    Returns a dict with 'icon_url', 'service_name', and 'fallback_emoji'.
+    """
+    # Service icon mappings (using public CDN URLs for logos)
+    service_map = {
+        "discord": {
+            "icon_url": "https://cdn.simpleicons.org/discord/5865F2",
+            "service_name": "Discord",
+            "emoji": "💬",
+        },
+        "slack": {
+            "icon_url": "https://cdn.simpleicons.org/slack/4A154B",
+            "service_name": "Slack",
+            "emoji": "💼",
+        },
+        "telegram": {
+            "icon_url": "https://cdn.simpleicons.org/telegram/26A5E4",
+            "service_name": "Telegram",
+            "emoji": "✈️",
+        },
+        "tgram": {
+            "icon_url": "https://cdn.simpleicons.org/telegram/26A5E4",
+            "service_name": "Telegram",
+            "emoji": "✈️",
+        },
+        "pushover": {
+            "icon_url": "https://cdn.simpleicons.org/pushover/249DF1",
+            "service_name": "Pushover",
+            "emoji": "📱",
+        },
+        "pover": {
+            "icon_url": "https://cdn.simpleicons.org/pushover/249DF1",
+            "service_name": "Pushover",
+            "emoji": "📱",
+        },
+        "gotify": {
+            "icon_url": "https://cdn.simpleicons.org/gotify/00A4D8",
+            "service_name": "Gotify",
+            "emoji": "🔔",
+        },
+        "mailto": {
+            "icon_url": "https://cdn.simpleicons.org/gmail/EA4335",
+            "service_name": "Email",
+            "emoji": "📧",
+        },
+        "mailtos": {
+            "icon_url": "https://cdn.simpleicons.org/gmail/EA4335",
+            "service_name": "Email",
+            "emoji": "📧",
+        },
+        "ntfy": {
+            "icon_url": "https://cdn.simpleicons.org/ntfy/3A9EEA",
+            "service_name": "ntfy",
+            "emoji": "🔔",
+        },
+        "matrix": {
+            "icon_url": "https://cdn.simpleicons.org/matrix/000000",
+            "service_name": "Matrix",
+            "emoji": "💬",
+        },
+        "mattermost": {
+            "icon_url": "https://cdn.simpleicons.org/mattermost/0058CC",
+            "service_name": "Mattermost",
+            "emoji": "💬",
+        },
+        "rocketchat": {
+            "icon_url": "https://cdn.simpleicons.org/rocketdotchat/F5455C",
+            "service_name": "Rocket.Chat",
+            "emoji": "🚀",
+        },
+        "teams": {
+            "icon_url": "https://cdn.simpleicons.org/microsoftteams/6264A7",
+            "service_name": "Microsoft Teams",
+            "emoji": "👥",
+        },
+        "webhook": {
+            "icon_url": "https://cdn.simpleicons.org/webhooks/2088FF",
+            "service_name": "Webhook",
+            "emoji": "🌐",
+        },
+        "json": {
+            "icon_url": "https://cdn.simpleicons.org/json/000000",
+            "service_name": "JSON",
+            "emoji": "🌐",
+        },
+        "xml": {
+            "icon_url": "https://cdn.simpleicons.org/xml/005FAD",
+            "service_name": "XML",
+            "emoji": "🌐",
+        },
+        "prowl": {
+            "icon_url": "https://cdn.simpleicons.org/apple/000000",
+            "service_name": "Prowl",
+            "emoji": "🍎",
+        },
+        "pushbullet": {
+            "icon_url": "https://cdn.simpleicons.org/pushbullet/4AB367",
+            "service_name": "Pushbullet",
+            "emoji": "📱",
+        },
+        "signal": {
+            "icon_url": "https://cdn.simpleicons.org/signal/3A76F0",
+            "service_name": "Signal",
+            "emoji": "💬",
+        },
+        "twilio": {
+            "icon_url": "https://cdn.simpleicons.org/twilio/F22F46",
+            "service_name": "Twilio",
+            "emoji": "📱",
+        },
+        "twitter": {
+            "icon_url": "https://cdn.simpleicons.org/x/000000",
+            "service_name": "Twitter/X",
+            "emoji": "🐦",
+        },
+        "mastodon": {
+            "icon_url": "https://cdn.simpleicons.org/mastodon/6364FF",
+            "service_name": "Mastodon",
+            "emoji": "🐘",
+        },
+        "reddit": {
+            "icon_url": "https://cdn.simpleicons.org/reddit/FF4500",
+            "service_name": "Reddit",
+            "emoji": "👽",
+        },
+        "ifttt": {
+            "icon_url": "https://cdn.simpleicons.org/ifttt/000000",
+            "service_name": "IFTTT",
+            "emoji": "⚡",
+        },
+        "join": {
+            "icon_url": "https://cdn.simpleicons.org/android/3DDC84",
+            "service_name": "Join",
+            "emoji": "📱",
+        },
+        "kodi": {
+            "icon_url": "https://cdn.simpleicons.org/kodi/17B2E7",
+            "service_name": "Kodi",
+            "emoji": "📺",
+        },
+        "xbmc": {
+            "icon_url": "https://cdn.simpleicons.org/kodi/17B2E7",
+            "service_name": "XBMC",
+            "emoji": "📺",
+        },
+        "synology": {
+            "icon_url": "https://cdn.simpleicons.org/synology/B5B5B6",
+            "service_name": "Synology",
+            "emoji": "💾",
+        },
+        "webex": {
+            "icon_url": "https://cdn.simpleicons.org/webex/000000",
+            "service_name": "Webex",
+            "emoji": "👥",
+        },
+        "zulip": {
+            "icon_url": "https://cdn.simpleicons.org/zulip/52C2AF",
+            "service_name": "Zulip",
+            "emoji": "💬",
+        },
+        "homeassistant": {
+            "icon_url": "https://cdn.simpleicons.org/homeassistant/18BCF2",
+            "service_name": "Home Assistant",
+            "emoji": "🏠",
+        },
+        "gitter": {
+            "icon_url": "https://cdn.simpleicons.org/gitter/ED1965",
+            "service_name": "Gitter",
+            "emoji": "💬",
+        },
+        "notica": {
+            "icon_url": "https://cdn.simpleicons.org/notifications/FF6B6B",
+            "service_name": "Notica",
+            "emoji": "🔔",
+        },
+        "notifico": {
+            "icon_url": "https://cdn.simpleicons.org/notifications/FF6B6B",
+            "service_name": "Notifico",
+            "emoji": "🔔",
+        },
+        "opsgenie": {
+            "icon_url": "https://cdn.simpleicons.org/opsgenie/172B4D",
+            "service_name": "Opsgenie",
+            "emoji": "🚨",
+        },
+        "pagerduty": {
+            "icon_url": "https://cdn.simpleicons.org/pagerduty/06AC38",
+            "service_name": "PagerDuty",
+            "emoji": "🚨",
+        },
+    }
+
+    # Extract service type from URL
+    url_lower = url.lower()
+    for service_key, service_info in service_map.items():
+        if url_lower.startswith(f"{service_key}://") or url_lower.startswith(
+            f"{service_key}s://"
+        ):
+            return service_info
+
+    # Default fallback for unknown services
+    if url_lower.startswith("http://") or url_lower.startswith("https://"):
+        return {
+            "icon_url": "https://cdn.simpleicons.org/webhooks/2088FF",
+            "service_name": "Webhook",
+            "emoji": "🌐",
+        }
+
+    # Generic fallback
+    return {"icon_url": "", "service_name": "Unknown Service", "emoji": "📢"}
 
 
 def update_env_file(key: str, new_values: list[str]):
@@ -867,6 +1092,164 @@ def remove_apprise_url(url: str) -> tuple[bool, str]:
 shutdown_event = asyncio.Event()
 
 
+async def check_github_updates(force: bool = False) -> Dict[str, Any]:
+    """
+    Check for updates from GitHub repository.
+
+    Args:
+        force: If True, bypass the interval check and force an update check
+
+    Returns:
+        Dictionary containing update information and status
+    """
+    global _last_update_check
+
+    with _update_check_lock:
+        # Check if we should skip based on interval (unless forced)
+        if not force and _last_update_check is not None:
+            time_since_check = time.time() - _last_update_check["timestamp"]
+            if time_since_check < GITHUB_CHECK_INTERVAL * 3600:  # Convert hours
+                return {
+                    "status": "cached",
+                    "message": "Using cached update check result",
+                    "last_check": _last_update_check["checked_at"],
+                    "next_check_in_hours": round(
+                        (GITHUB_CHECK_INTERVAL * 3600 - time_since_check) / 3600, 2
+                    ),
+                    **{
+                        k: v
+                        for k, v in _last_update_check.items()
+                        if k not in ["timestamp", "checked_at"]
+                    },
+                }
+
+    try:
+        session = await get_http_session()
+
+        # Get latest commit from GitHub API
+        api_url = f"https://api.github.com/repos/{GITHUB_REPO}/commits/{GITHUB_BRANCH}"
+        headers = {
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "TestFlight-Apprise-Notifier",
+        }
+
+        async with session.get(api_url, headers=headers, timeout=10) as response:
+            if response.status != 200:
+                error_msg = f"GitHub API returned status {response.status}"
+                logging.warning(f"Update check failed: {error_msg}")
+                return {
+                    "status": "error",
+                    "message": error_msg,
+                    "checked_at": format_datetime(datetime.now()),
+                }
+
+            data = await response.json()
+
+            # Extract commit information
+            latest_commit = data.get("sha", "unknown")[:7]  # Short SHA
+            commit_date = data.get("commit", {}).get("author", {}).get("date", "")
+            commit_message = data.get("commit", {}).get("message", "").split("\n")[0]
+            commit_url = data.get("html_url", "")
+
+            # Try to read current version from a VERSION file or use git
+            current_version = "unknown"
+            try:
+                if os.path.exists("VERSION"):
+                    with open("VERSION", "r") as f:
+                        current_version = f.read().strip()
+                else:
+                    # Try to get git commit if available
+                    import subprocess
+
+                    result = subprocess.run(
+                        ["git", "rev-parse", "--short", "HEAD"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if result.returncode == 0:
+                        current_version = result.stdout.strip()
+            except Exception as e:
+                logging.debug(f"Could not determine current version: {e}")
+
+            update_available = (
+                current_version != "unknown" and latest_commit != current_version
+            )
+
+            result = {
+                "status": "success",
+                "update_available": update_available,
+                "current_version": current_version,
+                "latest_version": latest_commit,
+                "latest_commit_date": commit_date,
+                "latest_commit_message": commit_message,
+                "commit_url": commit_url,
+                "repository": GITHUB_REPO,
+                "branch": GITHUB_BRANCH,
+                "checked_at": format_datetime(datetime.now()),
+                "timestamp": time.time(),
+            }
+
+            # Cache the result
+            with _update_check_lock:
+                _last_update_check = result.copy()
+
+            if update_available:
+                logging.info(f"Update available: {current_version} -> {latest_commit}")
+                # Send notification about update
+                msg = (
+                    f"🔔 TestFlight Notifier Update Available!\n"
+                    f"Current: {current_version}\n"
+                    f"Latest: {latest_commit}\n"
+                    f"Message: {commit_message}"
+                )
+                await send_notification_async(msg, apobj)
+            else:
+                logging.info("No updates available - running latest version")
+
+            return result
+
+    except asyncio.TimeoutError:
+        error_msg = "GitHub API request timed out"
+        logging.warning(f"Update check failed: {error_msg}")
+        return {
+            "status": "error",
+            "message": error_msg,
+            "checked_at": format_datetime(datetime.now()),
+        }
+    except Exception as e:
+        error_msg = f"Update check failed: {str(e)}"
+        logging.error(error_msg)
+        return {
+            "status": "error",
+            "message": error_msg,
+            "checked_at": format_datetime(datetime.now()),
+        }
+
+
+async def periodic_update_check():
+    """Background task to periodically check for GitHub updates."""
+    logging.info(
+        f"Starting periodic update checker "
+        f"(interval: {GITHUB_CHECK_INTERVAL} hours)"
+    )
+
+    while not shutdown_event.is_set():
+        try:
+            await check_github_updates(force=False)
+        except Exception as e:
+            logging.error(f"Error in periodic update check: {e}")
+
+        # Wait for the interval or until shutdown
+        try:
+            await asyncio.wait_for(
+                shutdown_event.wait(), timeout=GITHUB_CHECK_INTERVAL * 3600
+            )
+            break  # Shutdown event was set
+        except asyncio.TimeoutError:
+            continue  # Timeout reached, do another check
+
+
 async def cleanup_http_session():
     """Clean up the shared HTTP session."""
     global _http_session
@@ -909,6 +1292,13 @@ async def lifespan(app: FastAPI):
     logging.info("FastAPI application starting up...")
     # Ensure web handler is attached after any uvicorn initialization
     ensure_web_handler_attached()
+
+    # Start periodic GitHub update checker if enabled
+    update_task = None
+    if GITHUB_CHECK_INTERVAL > 0:
+        update_task = asyncio.create_task(periodic_update_check())
+        logging.info("GitHub update checker started")
+
     try:
         yield
     except asyncio.CancelledError:
@@ -917,6 +1307,12 @@ async def lifespan(app: FastAPI):
     finally:
         # Shutdown
         logging.info("FastAPI application shutting down...")
+        if update_task and not update_task.done():
+            update_task.cancel()
+            try:
+                await update_task
+            except asyncio.CancelledError:
+                pass
         await cleanup_http_session()
 
 
@@ -1506,38 +1902,36 @@ async def home():
                     return;
                 }}
                 
-                container.innerHTML = urls.map(url => {{
-                    // Extract service type from URL for icon
-                    let icon = '📢';
-                    if (url.includes('discord://')) icon = '💬';
-                    else if (url.includes('slack://')) icon = '💼';
-                    else if (url.includes('telegram://')) icon = '✈️';
-                    else if (url.includes('pushover://')) icon = '📱';
-                    else if (url.includes('gotify://')) icon = '🔔';
-                    else if (url.includes('mailto:')) icon = '📧';
-                    else if (url.includes('http://') || url.includes('https://')) icon = '🌐';
+                container.innerHTML = urls.map(urlInfo => {{
+                    const url = urlInfo.url;
+                    const displayUrl = urlInfo.display_url;
+                    const serviceName = urlInfo.service_name;
+                    const iconUrl = urlInfo.icon_url;
+                    const emoji = urlInfo.emoji;
                     
-                    // Mask sensitive parts of the URL for display
-                    let displayUrl = url;
-                    try {{
-                        const urlObj = new URL(url);
-                        if (urlObj.username || urlObj.password) {{
-                            displayUrl = url.replace(urlObj.username + ':' + urlObj.password, '***:***');
-                        }}
-                        // Hide query parameters for security
-                        displayUrl = displayUrl.split('?')[0];
-                    }} catch (e) {{
-                        // If URL parsing fails, just show a masked version
-                        displayUrl = url.substring(0, 20) + '...';
+                    // Use icon if available, otherwise use emoji
+                    let iconHtml;
+                    if (iconUrl) {{
+                        iconHtml = `<img src="${{iconUrl}}" alt="${{serviceName}}" 
+                                        style="width: 24px; height: 24px; margin-right: 10px; vertical-align: middle;"
+                                        onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+                                    <span style="font-size: 1.3em; margin-right: 10px; display: none;">${{emoji}}</span>`;
+                    }} else {{
+                        iconHtml = `<span style="font-size: 1.3em; margin-right: 10px;">${{emoji}}</span>`;
                     }}
                     
-                    return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee;">
-                        <div style="display: flex; align-items: center; flex-grow: 1;">
-                            <span style="font-size: 1.2em; margin-right: 8px;">${{icon}}</span>
-                            <span style="font-family: monospace; font-size: 0.9em;">${{displayUrl}}</span>
+                    return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #dee2e6;">
+                        <div style="display: flex; align-items: center; flex-grow: 1; min-width: 0;">
+                            <div style="flex-shrink: 0;">
+                                ${{iconHtml}}
+                            </div>
+                            <div style="min-width: 0; flex-grow: 1;">
+                                <div style="font-weight: 500; color: #495057; margin-bottom: 2px;">${{serviceName}}</div>
+                                <div style="font-family: monospace; font-size: 0.85em; color: #6c757d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${{displayUrl}}">${{displayUrl}}</div>
+                            </div>
                         </div>
                         <button onclick="removeUrl('${{encodeURIComponent(url)}}')" 
-                                style="padding: 8px 16px; background-color: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">
+                                style="padding: 6px 12px; background-color: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em; margin-left: 10px; flex-shrink: 0; white-space: nowrap;">
                             ❌ Remove
                         </button>
                     </div>`;
@@ -1792,6 +2186,22 @@ async def get_testflight_ids():
     return {"testflight_ids": get_current_id_list()}
 
 
+@app.get("/api/updates")
+async def api_check_updates(force: bool = False):
+    """
+    Check for GitHub updates via API.
+
+    Query parameters:
+        force (bool): If true, bypass cache and force a new check
+
+    Example usage:
+        curl http://localhost:8080/api/updates
+        curl http://localhost:8080/api/updates?force=true
+    """
+    result = await check_github_updates(force=force)
+    return result
+
+
 @app.get("/api/testflight-ids/details")
 async def get_testflight_ids_details():
     """Get detailed information for all TestFlight IDs."""
@@ -1963,8 +2373,46 @@ async def batch_operations(request: Request):
 
 @app.get("/api/apprise-urls")
 async def get_apprise_urls():
-    """Get current list of Apprise URLs."""
-    return {"apprise_urls": get_current_apprise_urls()}
+    """Get current list of Apprise URLs with service information."""
+    urls = get_current_apprise_urls()
+
+    # Add service information for each URL
+    urls_with_info = []
+    for url in urls:
+        service_info = get_apprise_service_icon(url)
+
+        # Mask sensitive parts of URL for display
+        display_url = url
+        try:
+            # Try to parse as URL to mask credentials
+            if "://" in url:
+                parts = url.split("://", 1)
+                if len(parts) == 2:
+                    scheme = parts[0]
+                    rest = parts[1]
+                    # Look for @ symbol indicating credentials
+                    if "@" in rest:
+                        # Mask everything before @
+                        after_at = rest.split("@", 1)[1]
+                        display_url = f"{scheme}://***@{after_at}"
+                    # Hide query parameters for security
+                    if "?" in display_url:
+                        display_url = display_url.split("?")[0] + "?***"
+        except Exception:
+            # If parsing fails, show abbreviated version
+            display_url = url[:30] + "..." if len(url) > 30 else url
+
+        urls_with_info.append(
+            {
+                "url": url,  # Full URL for removal operations
+                "display_url": display_url,
+                "service_name": service_info["service_name"],
+                "icon_url": service_info["icon_url"],
+                "emoji": service_info["emoji"],
+            }
+        )
+
+    return {"apprise_urls": urls_with_info}
 
 
 @app.post("/api/apprise-urls/validate")
