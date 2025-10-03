@@ -311,6 +311,38 @@ def get_recent_logs(limit: int = 20) -> list:
 web_handler = WebLogHandler()
 logging.getLogger().addHandler(web_handler)
 
+
+# Custom uvicorn log config that preserves our formatting
+def get_uvicorn_log_config():
+    """
+    Create a uvicorn log config that uses our existing logging setup.
+    
+    This prevents uvicorn from reconfiguring logging while still allowing
+    it to log properly through our configured handlers.
+    """
+    return {
+        "version": 1,
+        "disable_existing_loggers": False,  # Keep our handlers!
+        "formatters": {
+            "default": {
+                "format": format_str,
+            },
+        },
+        "handlers": {
+            "default": {
+                "formatter": "default",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stderr",
+            },
+        },
+        "loggers": {
+            "uvicorn": {"handlers": ["default"], "level": "INFO", "propagate": False},
+            "uvicorn.error": {"level": "INFO", "propagate": False},
+            "uvicorn.access": {"handlers": ["default"], "level": "INFO", "propagate": False},
+        },
+    }
+
+
 # Validate environment variables
 ID_LIST = [tf_id.strip() for tf_id in id_list_raw if tf_id.strip()]
 APPRISE_URLS = [url.strip() for url in apprise_urls_raw if url.strip()]
@@ -2124,7 +2156,7 @@ async def start_fastapi():
             port=default_port,
             log_level="info",
             access_log=False,  # Disable access logs to prevent console spam
-            log_config=None,  # Prevent uvicorn from reconfiguring logging
+            log_config=get_uvicorn_log_config(),  # Use custom config to preserve formatting
         )
         server = uvicorn.Server(config)
         
