@@ -201,7 +201,7 @@ async def get_http_session() -> aiohttp.ClientSession:
                     connector=connector,
                     timeout=timeout,
                     headers={
-                        "User-Agent": "TestFlight-Notifier/1.0.5b",
+                        "User-Agent": "TestFlight-Notifier/1.0.6",
                         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                         "Accept-Language": "en-US,en;q=0.9",
                         "Accept-Encoding": "gzip, deflate, br",
@@ -212,7 +212,7 @@ async def get_http_session() -> aiohttp.ClientSession:
 
 
 # Version
-__version__ = "1.0.5e"
+__version__ = "1.0.6"
 
 
 def get_multiline_env_value(key: str) -> str:
@@ -292,9 +292,42 @@ HEARTBEAT_INTERVAL = (
     int(os.getenv("HEARTBEAT_INTERVAL", "6")) * 60 * 60
 )  # Convert hours to seconds
 
-# Configure logging
+
+
+# Configure logging with colored output
+class ColoredFormatter(logging.Formatter):
+    """Custom formatter that adds color to log levels in console."""
+
+    # ANSI color codes
+    COLORS = {
+        'DEBUG': '\033[36m',      # Cyan
+        'INFO': '\033[90m',       # Gray
+        'WARNING': '\033[93m',    # Yellow
+        'ERROR': '\033[91m',      # Red
+        'CRITICAL': '\033[91m',   # Red (same as ERROR)
+    }
+    RESET = '\033[0m'            # Reset color
+
+    def format(self, record):
+        # Get the log level color
+        levelname = record.levelname
+        color = self.COLORS.get(levelname, self.RESET)
+
+        # Color the level name
+        record.levelname = f"{color}{levelname}{self.RESET}"
+
+        # Format the message
+        return super().format(record)
+
+
 format_str = f"%(asctime)s - %(levelname)s - %(message)s [v{__version__}]"
-logging.basicConfig(level=logging.INFO, format=format_str)
+
+# Create console handler with colored formatter
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(ColoredFormatter(format_str))
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, handlers=[console_handler])
 
 # Web logging handler to capture logs for web interface
 log_entries: deque = deque(maxlen=100)  # Keep last 100 log entries
