@@ -27,19 +27,33 @@ class TestFlightStatus(Enum):
 
 
 # Status text patterns for detection
+# Note: These patterns are matched against lowercase page text
+# Order matters - FULL and CLOSED should be checked before OPEN
 STATUS_PATTERNS = {
     TestFlightStatus.FULL: [
         "this beta is full",
         "beta is full",
+        "full - there aren't any more spots",
+        "there are no more spots available",
     ],
     TestFlightStatus.CLOSED: [
         "no longer accepting testers",
         "not accepting any new testers",
         "this beta isn't accepting",
+        "isn't accepting any new testers",
+        "beta isn't open to new testers",
     ],
     TestFlightStatus.OPEN: [
         "join the beta",
         "start testing",
+        "open to testers",
+        "get this app from the app store",
+        "get it from the app store",
+        # Match button text or CTAs that appear on open beta pages
+        "join the test",
+        "become a tester",
+        "join as a tester",
+        "test this app",
     ],
 }
 
@@ -278,20 +292,31 @@ async def check_testflight_status(
                     app_name = app_name.replace("Join the ", "")
                     result["app_name"] = app_name
 
-            # Get status text from the page
+            # Get status text from the page - try multiple selectors
             status_element = soup.select_one(".beta-status span")
             if status_element:
                 raw_status_text = status_element.text.strip()
             else:
+                # Try alternative selectors that Apple might be using
+                alt_selectors = [
+                    "main p",  # Main content area paragraph
+                    "[data-testid='beta-status']",  # Data attribute
+                    ".status-text",  # Alternative class name
+                    "div[role='main'] p",  # Semantic div
+                ]
                 raw_status_text = ""
+                for selector in alt_selectors:
+                    elem = soup.select_one(selector)
+                    if elem:
+                        raw_status_text = elem.text.strip()
+                        break
 
-            # If no status element, check full page text
-            if not raw_status_text:
-                page_text = soup.get_text(separator=" ").lower()
-            else:
-                page_text = raw_status_text.lower()
+            # Always also get full page text as fallback for pattern matching
+            full_page_text = soup.get_text(separator=" ").lower()
+            page_text = raw_status_text.lower() if raw_status_text else full_page_text
 
-            result["raw_text"] = raw_status_text or page_text[:100]
+            # Store raw text for debugging (up to 500 chars for investigation)
+            result["raw_text"] = raw_status_text or full_page_text[:300]
 
             # Detect status based on text patterns
             detected = False

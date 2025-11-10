@@ -201,7 +201,7 @@ async def get_http_session() -> aiohttp.ClientSession:
                     connector=connector,
                     timeout=timeout,
                     headers={
-                        "User-Agent": "TestFlight-Notifier/1.0.6",
+                        "User-Agent": "TestFlight-Notifier/1.0.7",
                         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                         "Accept-Language": "en-US,en;q=0.9",
                         "Accept-Encoding": "gzip, deflate, br",
@@ -212,7 +212,7 @@ async def get_http_session() -> aiohttp.ClientSession:
 
 
 # Version
-__version__ = "1.0.6"
+__version__ = "1.0.7"
 
 
 def get_multiline_env_value(key: str) -> str:
@@ -2614,9 +2614,14 @@ async def fetch_testflight_status(session, tf_id):
                 logging.info(f"200 - {app_name} - Beta is still open (no notification)")
 
         else:
-            # Unknown status - log for investigation
-            raw_text = result.get("raw_text", "N/A")[:50]
-            logging.info(f"200 - {app_name} - Unknown status: {raw_text}")
+            # Unknown status - log for investigation with more details
+            raw_text = result.get("raw_text", "N/A")
+            logging.warning(
+                f"200 - {app_name} - UNKNOWN status detected. "
+                f"Full raw text (first 200 chars): '{raw_text[:200]}' - "
+                f"Please check the TestFlight page and report this pattern "
+                f"so we can add it to STATUS_PATTERNS for proper detection."
+            )
 
         # Send notification if status changed to something noteworthy
         if should_notify:
