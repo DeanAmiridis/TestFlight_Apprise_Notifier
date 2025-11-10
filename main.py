@@ -201,7 +201,7 @@ async def get_http_session() -> aiohttp.ClientSession:
                     connector=connector,
                     timeout=timeout,
                     headers={
-                        "User-Agent": "TestFlight-Notifier/1.0.7",
+                        "User-Agent": "TestFlight-Notifier/1.0.7b",
                         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                         "Accept-Language": "en-US,en;q=0.9",
                         "Accept-Encoding": "gzip, deflate, br",
@@ -212,7 +212,7 @@ async def get_http_session() -> aiohttp.ClientSession:
 
 
 # Version
-__version__ = "1.0.7"
+__version__ = "1.0.7b"
 
 
 def get_multiline_env_value(key: str) -> str:
@@ -1410,6 +1410,21 @@ async def home():
                 --shadow: rgba(0,0,0,0.1);
             }}
             
+            body.dark-mode {{
+                --bg-color: #1a1a1a;
+                --container-bg: #2d2d2d;
+                --card-bg: #3a3a3a;
+                --text-color: #e0e0e0;
+                --text-secondary: #b0b0b0;
+                --border-color: #404040;
+                --header-border: #4a9eff;
+                --success-color: #28a745;
+                --danger-color: #dc3545;
+                --warning-color: #ffc107;
+                --info-color: #17a2b8;
+                --shadow: rgba(0,0,0,0.3);
+            }}
+            
             body {{ 
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
                 margin: 10px; 
@@ -1433,6 +1448,32 @@ async def home():
                 padding-bottom: 10px; 
                 margin-bottom: 20px;
                 position: relative;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 15px;
+            }}
+            .theme-toggle {{
+                position: absolute;
+                right: 0;
+                background-color: var(--card-bg);
+                border: 1px solid var(--border-color);
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 1.3em;
+                transition: background-color 0.3s, transform 0.2s;
+            }}
+            .theme-toggle:hover {{
+                transform: scale(1.1);
+                background-color: var(--border-color);
+            }}
+            .theme-toggle.dark {{
+                filter: brightness(1.2);
             }}
             .status-grid {{ 
                 display: grid; 
@@ -1658,7 +1699,10 @@ async def home():
     </head>
     <body>
         <div class="container">
-            <h1 class="header">🚀 TestFlight Apprise Notifier</h1>
+            <div class="header">
+                <h1 style="margin: 0;">🚀 TestFlight Apprise Notifier</h1>
+                <button class="theme-toggle" id="theme-toggle" title="Toggle dark mode" onclick="toggleTheme()">🌙</button>
+            </div>
             
             <div class="status-grid">
                 <div class="status-card">
@@ -2059,8 +2103,42 @@ async def home():
                 }}
             }}
             
+            // Theme management
+            function initializeTheme() {{
+                const savedTheme = localStorage.getItem('theme-preference');
+                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                const theme = savedTheme || (prefersDark ? 'dark' : 'light');
+                
+                applyTheme(theme);
+            }}
+            
+            function toggleTheme() {{
+                const body = document.body;
+                const isDark = body.classList.contains('dark-mode');
+                const newTheme = isDark ? 'light' : 'dark';
+                
+                applyTheme(newTheme);
+                localStorage.setItem('theme-preference', newTheme);
+            }}
+            
+            function applyTheme(theme) {{
+                const body = document.body;
+                const toggle = document.getElementById('theme-toggle');
+                
+                if (theme === 'dark') {{
+                    body.classList.add('dark-mode');
+                    toggle.textContent = '☀️';
+                    toggle.classList.add('dark');
+                }} else {{
+                    body.classList.remove('dark-mode');
+                    toggle.textContent = '🌙';
+                    toggle.classList.remove('dark');
+                }}
+            }}
+            
             // Load IDs on page load
             document.addEventListener('DOMContentLoaded', function() {{
+                initializeTheme();
                 refreshIds();
                 refreshUrls();
                 // Initialize collapsible sections - expand by default
