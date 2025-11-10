@@ -326,8 +326,15 @@ format_str = f"%(asctime)s - %(levelname)s - %(message)s [v{__version__}]"
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(ColoredFormatter(format_str))
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, handlers=[console_handler])
+# Configure logging - use force=True to avoid duplicate basicConfig issues
+# Don't pass handlers here, we'll configure manually
+logging.basicConfig(level=logging.INFO, force=True)
+
+# Clear any default handlers and add only our custom one
+root_logger = logging.getLogger()
+root_logger.handlers.clear()
+root_logger.addHandler(console_handler)
+root_logger.setLevel(logging.INFO)
 
 # Web logging handler to capture logs for web interface
 log_entries: deque = deque(maxlen=100)  # Keep last 100 log entries
@@ -360,9 +367,8 @@ def get_recent_logs(limit: int = 20) -> list:
         return list(itertools.islice(log_entries, start_idx, total_entries))
 
 
-# Add the web log handler to the root logger
+# Add the web log handler to the root logger (will be attached in ensure_web_handler_attached)
 web_handler = WebLogHandler()
-logging.getLogger().addHandler(web_handler)
 
 
 def ensure_web_handler_attached():
@@ -371,19 +377,17 @@ def ensure_web_handler_attached():
     This is called after uvicorn initializes to make sure our handler
     captures all logs including uvicorn logs.
     """
-    # Get the web handler (it should already exist)
-    loggers_to_patch = [
-        logging.getLogger(),  # Root logger
-        logging.getLogger("uvicorn"),
-        logging.getLogger("uvicorn.error"),
-        logging.getLogger("uvicorn.access"),
-    ]
-
-    for logger in loggers_to_patch:
-        # Check if web handler is already attached
-        if web_handler not in logger.handlers:
-            logger.addHandler(web_handler)
-            logging.debug(f"Attached WebLogHandler to {logger.name or 'root'}")
+    # Only attach to root logger - handlers propagate to child loggers
+    root_logger = logging.getLogger()
+    
+    # Check if web handler is already attached to avoid duplicates
+    handler_already_attached = any(
+        isinstance(h, WebLogHandler) for h in root_logger.handlers
+    )
+    
+    if not handler_already_attached:
+        root_logger.addHandler(web_handler)
+        logging.debug("WebLogHandler attached to root logger")
 
 
 # Custom uvicorn log config that preserves our formatting
