@@ -336,6 +336,11 @@ root_logger.handlers.clear()
 root_logger.addHandler(console_handler)
 root_logger.setLevel(logging.INFO)
 
+# Prevent propagation in child loggers that might have their own handlers
+logging.getLogger("uvicorn").propagate = True
+logging.getLogger("uvicorn.error").propagate = True
+logging.getLogger("uvicorn.access").propagate = True
+
 # Web logging handler to capture logs for web interface
 log_entries: deque = deque(maxlen=100)  # Keep last 100 log entries
 log_entries_lock = threading.Lock()  # Thread safety for log access
@@ -369,6 +374,7 @@ def get_recent_logs(limit: int = 20) -> list:
 
 # Add the web log handler to the root logger (will be attached in ensure_web_handler_attached)
 web_handler = WebLogHandler()
+_web_handler_attached = False  # Track if web handler has been attached
 
 
 def ensure_web_handler_attached():
@@ -377,17 +383,25 @@ def ensure_web_handler_attached():
     This is called after uvicorn initializes to make sure our handler
     captures all logs including uvicorn logs.
     """
+    global _web_handler_attached
+    
+    if _web_handler_attached:
+        return  # Already attached, don't add again
+    
     # Only attach to root logger - handlers propagate to child loggers
     root_logger = logging.getLogger()
     
-    # Check if web handler is already attached to avoid duplicates
-    handler_already_attached = any(
-        isinstance(h, WebLogHandler) for h in root_logger.handlers
-    )
+    # Double-check no duplicate WebLogHandlers exist
+    for handler in root_logger.handlers:
+        if isinstance(handler, WebLogHandler):
+            _web_handler_attached = True
+            logging.debug("WebLogHandler already present on root logger")
+            return
     
-    if not handler_already_attached:
-        root_logger.addHandler(web_handler)
-        logging.debug("WebLogHandler attached to root logger")
+    # Add web handler
+    root_logger.addHandler(web_handler)
+    _web_handler_attached = True
+    logging.debug("WebLogHandler attached to root logger")
 
 
 # Custom uvicorn log config that preserves our formatting
@@ -406,25 +420,14 @@ def get_uvicorn_log_config():
                 "format": format_str,
             },
         },
-        "handlers": {
-            "default": {
-                "formatter": "default",
-                "class": "logging.StreamHandler",
-                "stream": "ext://sys.stderr",
-            },
-        },
+        "handlers": {},  # Don't create any new handlers - use root logger
         "loggers": {
-            "uvicorn": {"handlers": ["default"], "level": "INFO", "propagate": True},
+            "uvicorn": {"level": "INFO", "propagate": True},
             "uvicorn.error": {"level": "INFO", "propagate": True},
-            "uvicorn.access": {
-                "handlers": ["default"],
-                "level": "INFO",
-                "propagate": True,
-            },
+            "uvicorn.access": {"level": "INFO", "propagate": True},
         },
         "root": {
             "level": "INFO",
-            "handlers": ["default"],
         },
     }
 
