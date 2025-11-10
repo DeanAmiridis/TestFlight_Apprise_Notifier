@@ -201,7 +201,7 @@ async def get_http_session() -> aiohttp.ClientSession:
                     connector=connector,
                     timeout=timeout,
                     headers={
-                        "User-Agent": "TestFlight-Notifier/1.0.5b",
+                        "User-Agent": "TestFlight-Notifier/1.0.7",
                         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                         "Accept-Language": "en-US,en;q=0.9",
                         "Accept-Encoding": "gzip, deflate, br",
@@ -212,7 +212,7 @@ async def get_http_session() -> aiohttp.ClientSession:
 
 
 # Version
-__version__ = "1.0.5e"
+__version__ = "1.0.7"
 
 
 def get_multiline_env_value(key: str) -> str:
@@ -292,9 +292,54 @@ HEARTBEAT_INTERVAL = (
     int(os.getenv("HEARTBEAT_INTERVAL", "6")) * 60 * 60
 )  # Convert hours to seconds
 
-# Configure logging
+
+
+# Configure logging with colored output
+class ColoredFormatter(logging.Formatter):
+    """Custom formatter that adds color to log levels in console."""
+
+    # ANSI color codes
+    COLORS = {
+        'DEBUG': '\033[36m',      # Cyan
+        'INFO': '\033[90m',       # Gray
+        'WARNING': '\033[93m',    # Yellow
+        'ERROR': '\033[91m',      # Red
+        'CRITICAL': '\033[91m',   # Red (same as ERROR)
+    }
+    RESET = '\033[0m'            # Reset color
+
+    def format(self, record):
+        # Get the log level color
+        levelname = record.levelname
+        color = self.COLORS.get(levelname, self.RESET)
+
+        # Color the level name
+        record.levelname = f"{color}{levelname}{self.RESET}"
+
+        # Format the message
+        return super().format(record)
+
+
 format_str = f"%(asctime)s - %(levelname)s - %(message)s [v{__version__}]"
-logging.basicConfig(level=logging.INFO, format=format_str)
+
+# Create console handler with colored formatter
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(ColoredFormatter(format_str))
+
+# Configure logging - use force=True to avoid duplicate basicConfig issues
+# Don't pass handlers here, we'll configure manually
+logging.basicConfig(level=logging.INFO, force=True)
+
+# Clear any default handlers and add only our custom one
+root_logger = logging.getLogger()
+root_logger.handlers.clear()
+root_logger.addHandler(console_handler)
+root_logger.setLevel(logging.INFO)
+
+# Prevent propagation in child loggers that might have their own handlers
+logging.getLogger("uvicorn").propagate = True
+logging.getLogger("uvicorn.error").propagate = True
+logging.getLogger("uvicorn.access").propagate = True
 
 # Web logging handler to capture logs for web interface
 log_entries: deque = deque(maxlen=100)  # Keep last 100 log entries
@@ -327,9 +372,9 @@ def get_recent_logs(limit: int = 20) -> list:
         return list(itertools.islice(log_entries, start_idx, total_entries))
 
 
-# Add the web log handler to the root logger
+# Add the web log handler to the root logger (will be attached in ensure_web_handler_attached)
 web_handler = WebLogHandler()
-logging.getLogger().addHandler(web_handler)
+_web_handler_attached = False  # Track if web handler has been attached
 
 
 def ensure_web_handler_attached():
@@ -338,19 +383,25 @@ def ensure_web_handler_attached():
     This is called after uvicorn initializes to make sure our handler
     captures all logs including uvicorn logs.
     """
-    # Get the web handler (it should already exist)
-    loggers_to_patch = [
-        logging.getLogger(),  # Root logger
-        logging.getLogger("uvicorn"),
-        logging.getLogger("uvicorn.error"),
-        logging.getLogger("uvicorn.access"),
-    ]
-
-    for logger in loggers_to_patch:
-        # Check if web handler is already attached
-        if web_handler not in logger.handlers:
-            logger.addHandler(web_handler)
-            logging.debug(f"Attached WebLogHandler to {logger.name or 'root'}")
+    global _web_handler_attached
+    
+    if _web_handler_attached:
+        return  # Already attached, don't add again
+    
+    # Only attach to root logger - handlers propagate to child loggers
+    root_logger = logging.getLogger()
+    
+    # Double-check no duplicate WebLogHandlers exist
+    for handler in root_logger.handlers:
+        if isinstance(handler, WebLogHandler):
+            _web_handler_attached = True
+            logging.debug("WebLogHandler already present on root logger")
+            return
+    
+    # Add web handler
+    root_logger.addHandler(web_handler)
+    _web_handler_attached = True
+    logging.debug("WebLogHandler attached to root logger")
 
 
 # Custom uvicorn log config that preserves our formatting
@@ -369,25 +420,14 @@ def get_uvicorn_log_config():
                 "format": format_str,
             },
         },
-        "handlers": {
-            "default": {
-                "formatter": "default",
-                "class": "logging.StreamHandler",
-                "stream": "ext://sys.stderr",
-            },
-        },
+        "handlers": {},  # Don't create any new handlers - use root logger
         "loggers": {
-            "uvicorn": {"handlers": ["default"], "level": "INFO", "propagate": True},
+            "uvicorn": {"level": "INFO", "propagate": True},
             "uvicorn.error": {"level": "INFO", "propagate": True},
-            "uvicorn.access": {
-                "handlers": ["default"],
-                "level": "INFO",
-                "propagate": True,
-            },
+            "uvicorn.access": {"level": "INFO", "propagate": True},
         },
         "root": {
             "level": "INFO",
-            "handlers": ["default"],
         },
     }
 
@@ -2581,9 +2621,14 @@ async def fetch_testflight_status(session, tf_id):
                 logging.info(f"200 - {app_name} - Beta is still open (no notification)")
 
         else:
-            # Unknown status - log for investigation
-            raw_text = result.get("raw_text", "N/A")[:50]
-            logging.info(f"200 - {app_name} - Unknown status: {raw_text}")
+            # Unknown status - log for investigation with more details
+            raw_text = result.get("raw_text", "N/A")
+            logging.warning(
+                f"200 - {app_name} - UNKNOWN status detected. "
+                f"Full raw text (first 200 chars): '{raw_text[:200]}' - "
+                f"Please check the TestFlight page and report this pattern "
+                f"so we can add it to STATUS_PATTERNS for proper detection."
+            )
 
         # Send notification if status changed to something noteworthy
         if should_notify:
