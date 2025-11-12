@@ -1379,10 +1379,10 @@ async def home():
         }.get(entry["level"], "#000000")
 
         log_html += f"""
-        <div style="margin: 5px 0; padding: 5px; border-left: 3px solid {level_color}; background-color: #f8f9fa;">
-            <span style="color: #6c757d; font-size: 0.9em;">{entry['timestamp']}</span>
+        <div style="margin: 5px 0; padding: 5px; border-left: 3px solid {level_color}; background-color: var(--card-bg);">
+            <span style="color: var(--text-secondary); font-size: 0.9em;">{entry['timestamp']}</span>
             <span style="color: {level_color}; font-weight: bold; margin-left: 10px;">[{entry['level']}]</span>
-            <span style="margin-left: 10px;">{entry['message']}</span>
+            <span style="margin-left: 10px; color: var(--text-color);">{entry['message']}</span>
         </div>
         """
 
@@ -1607,7 +1607,7 @@ async def home():
                 padding-left: 20px;
             }}
             .collapsible:hover {{
-                background-color: #f0f0f0;
+                background-color: var(--border-color);
             }}
             .collapsible::before {{
                 content: "+";
@@ -1615,7 +1615,7 @@ async def home():
                 left: 0;
                 top: 50%;
                 transform: translateY(-50%);
-                color: #666;
+                color: var(--text-secondary);
                 font-weight: bold;
                 font-size: 1.2em;
                 transition: transform 0.2s ease;
@@ -1631,6 +1631,20 @@ async def home():
             }}
             .collapsible-content.expanded {{
                 display: block;
+            }}
+            input[type="text"] {{
+                background-color: var(--container-bg);
+                color: var(--text-color);
+                border: 1px solid var(--border-color) !important;
+                transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+            }}
+            input[type="text"]:focus {{
+                outline: none;
+                border-color: var(--header-border) !important;
+                box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.1);
+            }}
+            input[type="text"]::placeholder {{
+                color: var(--text-secondary);
             }}
             @media (max-width: 768px) {{
                 body {{
@@ -1746,7 +1760,7 @@ async def home():
                             <div style="margin-bottom: 10px;">
                                 <input type="text" id="new-apprise-url" 
                                        placeholder="Enter Apprise URL (e.g., discord://...)" 
-                                       style="padding: 8px; width: 100%; max-width: 300px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                                       style="padding: 8px; width: 100%; max-width: 300px; border-radius: 4px; box-sizing: border-box;">
                                 <button onclick="validateAndAddUrl()" 
                                         style="padding: 8px 16px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px; width: 100%; max-width: 150px;">
                                     Validate & Add
@@ -1759,7 +1773,7 @@ async def home():
                     <div class="management-card">
                         <h3 class="collapsible" onclick="toggleCard(this)">Current Apprise URLs</h3>
                         <div class="collapsible-content">
-                            <div id="current-urls" style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; padding: 10px; border-radius: 4px; background-color: #f8f9fa;">
+                            <div id="current-urls" style="max-height: 200px; overflow-y: auto; padding: 10px; border-radius: 4px; background-color: var(--card-bg); border: 1px solid var(--border-color);">
                                 Loading...
                             </div>
                             <button onclick="refreshUrls()" 
@@ -1781,7 +1795,7 @@ async def home():
                         <div class="collapsible-content">
                             <div style="margin-bottom: 10px;">
                                 <input type="text" id="new-tf-id" placeholder="Enter TestFlight ID" 
-                                       style="padding: 8px; width: 100%; max-width: 250px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                                       style="padding: 8px; width: 100%; max-width: 250px; border-radius: 4px; box-sizing: border-box;">
                                 <button onclick="validateAndAddId()" 
                                         style="padding: 8px 16px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px; width: 100%; max-width: 150px;">
                                     Validate & Add
@@ -1794,7 +1808,7 @@ async def home():
                     <div class="management-card">
                         <h3 class="collapsible" onclick="toggleCard(this)">Current TestFlight IDs</h3>
                         <div class="collapsible-content">
-                            <div id="current-ids" style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; padding: 10px; border-radius: 4px; background-color: #f8f9fa;">
+                            <div id="current-ids" style="max-height: 200px; overflow-y: auto; padding: 10px; border-radius: 4px; background-color: var(--card-bg); border: 1px solid var(--border-color);">
                                 Loading...
                             </div>
                             <button onclick="refreshIds()" 
@@ -1809,7 +1823,7 @@ async def home():
             <div class="logs-section">
                 <h3 class="logs-header">📜 Recent Activity (Last 20 entries)</h3>
                 <div class="logs-container">
-                    {log_html if log_html else '<div style="text-align: center; color: #6c757d; padding: 20px;">No log entries yet...</div>'}
+                    {log_html if log_html else '<div style="text-align: center; color: var(--text-secondary); padding: 20px;">No log entries yet...</div>'}
                 </div>
             </div>
             
@@ -1866,12 +1880,12 @@ async def home():
                         `<img src="${{item.icon_url}}" style="width: 20px; height: 20px; border-radius: 4px; margin-right: 8px; vertical-align: middle;" alt="App Icon">` : 
                         '📱 ';
                     
-                    return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee;">
+                    return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
                         <div style="display: flex; align-items: center; flex-grow: 1;">
                             ${{iconHtml}}
                             <div>
-                                <div style="font-weight: ${{isAppName ? 'bold' : 'normal'}};">${{displayName}}</div>
-                                ${{isAppName ? `<div style="font-size: 0.8em; color: #666;">${{item.id}}</div>` : ''}}
+                                <div style="font-weight: ${{isAppName ? 'bold' : 'normal'}}; color: var(--text-color);">${{displayName}}</div>
+                                ${{isAppName ? `<div style="font-size: 0.8em; color: var(--text-secondary);">${{item.id}}</div>` : ''}}
                             </div>
                         </div>
                         <button onclick="removeId('${{item.id}}')" 
@@ -2004,14 +2018,14 @@ async def home():
                         iconHtml = `<span style="font-size: 1.3em; margin-right: 10px;">${{emoji}}</span>`;
                     }}
                     
-                    return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #dee2e6;">
+                    return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid var(--border-color);">
                         <div style="display: flex; align-items: center; flex-grow: 1; min-width: 0;">
                             <div style="flex-shrink: 0;">
                                 ${{iconHtml}}
                             </div>
                             <div style="min-width: 0; flex-grow: 1;">
-                                <div style="font-weight: 500; color: #495057; margin-bottom: 2px;">${{serviceName}}</div>
-                                <div style="font-family: monospace; font-size: 0.85em; color: #6c757d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${{displayUrl}}">${{displayUrl}}</div>
+                                <div style="font-weight: 500; color: var(--text-color); margin-bottom: 2px;">${{serviceName}}</div>
+                                <div style="font-family: monospace; font-size: 0.85em; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${{displayUrl}}">${{displayUrl}}</div>
                             </div>
                         </div>
                         <button onclick="removeUrl('${{encodeURIComponent(url)}}')" 
