@@ -201,7 +201,7 @@ async def get_http_session() -> aiohttp.ClientSession:
                     connector=connector,
                     timeout=timeout,
                     headers={
-                        "User-Agent": "TestFlight-Notifier/1.0.7",
+                        "User-Agent": "TestFlight-Notifier/1.0.7b",
                         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                         "Accept-Language": "en-US,en;q=0.9",
                         "Accept-Encoding": "gzip, deflate, br",
@@ -212,7 +212,7 @@ async def get_http_session() -> aiohttp.ClientSession:
 
 
 # Version
-__version__ = "1.0.7"
+__version__ = "1.0.7b"
 
 
 def get_multiline_env_value(key: str) -> str:
@@ -1379,10 +1379,10 @@ async def home():
         }.get(entry["level"], "#000000")
 
         log_html += f"""
-        <div style="margin: 5px 0; padding: 5px; border-left: 3px solid {level_color}; background-color: #f8f9fa;">
-            <span style="color: #6c757d; font-size: 0.9em;">{entry['timestamp']}</span>
+        <div style="margin: 5px 0; padding: 5px; border-left: 3px solid {level_color}; background-color: var(--card-bg);">
+            <span style="color: var(--text-secondary); font-size: 0.9em;">{entry['timestamp']}</span>
             <span style="color: {level_color}; font-weight: bold; margin-left: 10px;">[{entry['level']}]</span>
-            <span style="margin-left: 10px;">{entry['message']}</span>
+            <span style="margin-left: 10px; color: var(--text-color);">{entry['message']}</span>
         </div>
         """
 
@@ -1410,6 +1410,21 @@ async def home():
                 --shadow: rgba(0,0,0,0.1);
             }}
             
+            body.dark-mode {{
+                --bg-color: #1a1a1a;
+                --container-bg: #2d2d2d;
+                --card-bg: #3a3a3a;
+                --text-color: #e0e0e0;
+                --text-secondary: #b0b0b0;
+                --border-color: #404040;
+                --header-border: #4a9eff;
+                --success-color: #28a745;
+                --danger-color: #dc3545;
+                --warning-color: #ffc107;
+                --info-color: #17a2b8;
+                --shadow: rgba(0,0,0,0.3);
+            }}
+            
             body {{ 
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
                 margin: 10px; 
@@ -1433,6 +1448,32 @@ async def home():
                 padding-bottom: 10px; 
                 margin-bottom: 20px;
                 position: relative;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 15px;
+            }}
+            .theme-toggle {{
+                position: absolute;
+                right: 0;
+                background-color: var(--card-bg);
+                border: 1px solid var(--border-color);
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 1.3em;
+                transition: background-color 0.3s, transform 0.2s;
+            }}
+            .theme-toggle:hover {{
+                transform: scale(1.1);
+                background-color: var(--border-color);
+            }}
+            .theme-toggle.dark {{
+                filter: brightness(1.2);
             }}
             .status-grid {{ 
                 display: grid; 
@@ -1566,7 +1607,7 @@ async def home():
                 padding-left: 20px;
             }}
             .collapsible:hover {{
-                background-color: #f0f0f0;
+                background-color: var(--border-color);
             }}
             .collapsible::before {{
                 content: "+";
@@ -1574,7 +1615,7 @@ async def home():
                 left: 0;
                 top: 50%;
                 transform: translateY(-50%);
-                color: #666;
+                color: var(--text-secondary);
                 font-weight: bold;
                 font-size: 1.2em;
                 transition: transform 0.2s ease;
@@ -1590,6 +1631,20 @@ async def home():
             }}
             .collapsible-content.expanded {{
                 display: block;
+            }}
+            input[type="text"] {{
+                background-color: var(--container-bg);
+                color: var(--text-color);
+                border: 1px solid var(--border-color) !important;
+                transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+            }}
+            input[type="text"]:focus {{
+                outline: none;
+                border-color: var(--header-border) !important;
+                box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.1);
+            }}
+            input[type="text"]::placeholder {{
+                color: var(--text-secondary);
             }}
             @media (max-width: 768px) {{
                 body {{
@@ -1658,7 +1713,10 @@ async def home():
     </head>
     <body>
         <div class="container">
-            <h1 class="header">🚀 TestFlight Apprise Notifier</h1>
+            <div class="header">
+                <h1 style="margin: 0;">🚀 TestFlight Apprise Notifier</h1>
+                <button class="theme-toggle" id="theme-toggle" title="Toggle dark mode" onclick="toggleTheme()">🌙</button>
+            </div>
             
             <div class="status-grid">
                 <div class="status-card">
@@ -1702,7 +1760,7 @@ async def home():
                             <div style="margin-bottom: 10px;">
                                 <input type="text" id="new-apprise-url" 
                                        placeholder="Enter Apprise URL (e.g., discord://...)" 
-                                       style="padding: 8px; width: 100%; max-width: 300px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                                       style="padding: 8px; width: 100%; max-width: 300px; border-radius: 4px; box-sizing: border-box;">
                                 <button onclick="validateAndAddUrl()" 
                                         style="padding: 8px 16px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px; width: 100%; max-width: 150px;">
                                     Validate & Add
@@ -1715,7 +1773,7 @@ async def home():
                     <div class="management-card">
                         <h3 class="collapsible" onclick="toggleCard(this)">Current Apprise URLs</h3>
                         <div class="collapsible-content">
-                            <div id="current-urls" style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; padding: 10px; border-radius: 4px; background-color: #f8f9fa;">
+                            <div id="current-urls" style="max-height: 200px; overflow-y: auto; padding: 10px; border-radius: 4px; background-color: var(--card-bg); border: 1px solid var(--border-color);">
                                 Loading...
                             </div>
                             <button onclick="refreshUrls()" 
@@ -1737,7 +1795,7 @@ async def home():
                         <div class="collapsible-content">
                             <div style="margin-bottom: 10px;">
                                 <input type="text" id="new-tf-id" placeholder="Enter TestFlight ID" 
-                                       style="padding: 8px; width: 100%; max-width: 250px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                                       style="padding: 8px; width: 100%; max-width: 250px; border-radius: 4px; box-sizing: border-box;">
                                 <button onclick="validateAndAddId()" 
                                         style="padding: 8px 16px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px; width: 100%; max-width: 150px;">
                                     Validate & Add
@@ -1750,7 +1808,7 @@ async def home():
                     <div class="management-card">
                         <h3 class="collapsible" onclick="toggleCard(this)">Current TestFlight IDs</h3>
                         <div class="collapsible-content">
-                            <div id="current-ids" style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; padding: 10px; border-radius: 4px; background-color: #f8f9fa;">
+                            <div id="current-ids" style="max-height: 200px; overflow-y: auto; padding: 10px; border-radius: 4px; background-color: var(--card-bg); border: 1px solid var(--border-color);">
                                 Loading...
                             </div>
                             <button onclick="refreshIds()" 
@@ -1765,7 +1823,7 @@ async def home():
             <div class="logs-section">
                 <h3 class="logs-header">📜 Recent Activity (Last 20 entries)</h3>
                 <div class="logs-container">
-                    {log_html if log_html else '<div style="text-align: center; color: #6c757d; padding: 20px;">No log entries yet...</div>'}
+                    {log_html if log_html else '<div style="text-align: center; color: var(--text-secondary); padding: 20px;">No log entries yet...</div>'}
                 </div>
             </div>
             
@@ -1822,12 +1880,12 @@ async def home():
                         `<img src="${{item.icon_url}}" style="width: 20px; height: 20px; border-radius: 4px; margin-right: 8px; vertical-align: middle;" alt="App Icon">` : 
                         '📱 ';
                     
-                    return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee;">
+                    return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
                         <div style="display: flex; align-items: center; flex-grow: 1;">
                             ${{iconHtml}}
                             <div>
-                                <div style="font-weight: ${{isAppName ? 'bold' : 'normal'}};">${{displayName}}</div>
-                                ${{isAppName ? `<div style="font-size: 0.8em; color: #666;">${{item.id}}</div>` : ''}}
+                                <div style="font-weight: ${{isAppName ? 'bold' : 'normal'}}; color: var(--text-color);">${{displayName}}</div>
+                                ${{isAppName ? `<div style="font-size: 0.8em; color: var(--text-secondary);">${{item.id}}</div>` : ''}}
                             </div>
                         </div>
                         <button onclick="removeId('${{item.id}}')" 
@@ -1960,14 +2018,14 @@ async def home():
                         iconHtml = `<span style="font-size: 1.3em; margin-right: 10px;">${{emoji}}</span>`;
                     }}
                     
-                    return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #dee2e6;">
+                    return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid var(--border-color);">
                         <div style="display: flex; align-items: center; flex-grow: 1; min-width: 0;">
                             <div style="flex-shrink: 0;">
                                 ${{iconHtml}}
                             </div>
                             <div style="min-width: 0; flex-grow: 1;">
-                                <div style="font-weight: 500; color: #495057; margin-bottom: 2px;">${{serviceName}}</div>
-                                <div style="font-family: monospace; font-size: 0.85em; color: #6c757d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${{displayUrl}}">${{displayUrl}}</div>
+                                <div style="font-weight: 500; color: var(--text-color); margin-bottom: 2px;">${{serviceName}}</div>
+                                <div style="font-family: monospace; font-size: 0.85em; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${{displayUrl}}">${{displayUrl}}</div>
                             </div>
                         </div>
                         <button onclick="removeUrl('${{encodeURIComponent(url)}}')" 
@@ -2059,8 +2117,42 @@ async def home():
                 }}
             }}
             
+            // Theme management
+            function initializeTheme() {{
+                const savedTheme = localStorage.getItem('theme-preference');
+                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                const theme = savedTheme || (prefersDark ? 'dark' : 'light');
+                
+                applyTheme(theme);
+            }}
+            
+            function toggleTheme() {{
+                const body = document.body;
+                const isDark = body.classList.contains('dark-mode');
+                const newTheme = isDark ? 'light' : 'dark';
+                
+                applyTheme(newTheme);
+                localStorage.setItem('theme-preference', newTheme);
+            }}
+            
+            function applyTheme(theme) {{
+                const body = document.body;
+                const toggle = document.getElementById('theme-toggle');
+                
+                if (theme === 'dark') {{
+                    body.classList.add('dark-mode');
+                    toggle.textContent = '☀️';
+                    toggle.classList.add('dark');
+                }} else {{
+                    body.classList.remove('dark-mode');
+                    toggle.textContent = '🌙';
+                    toggle.classList.remove('dark');
+                }}
+            }}
+            
             // Load IDs on page load
             document.addEventListener('DOMContentLoaded', function() {{
+                initializeTheme();
                 refreshIds();
                 refreshUrls();
                 // Initialize collapsible sections - expand by default
