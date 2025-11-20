@@ -59,6 +59,18 @@ GITHUB_CHECK_INTERVAL = int(os.getenv("GITHUB_CHECK_INTERVAL_HOURS", "24"))
 _previous_status = {}  # tf_id -> TestFlightStatus
 _status_lock = threading.Lock()
 
+# Track whether an OPEN notification has been sent per TestFlight ID
+_open_notified: Dict[str, bool] = {}  # tf_id -> notification sent?
+_open_notified_lock = threading.Lock()
+
+# Configuration: force notifications for every OPEN poll
+ALWAYS_NOTIFY_OPEN = os.getenv("ALWAYS_NOTIFY_OPEN", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
 # GitHub update check tracking
 _last_update_check: Optional[Dict[str, Any]] = None
 _update_check_lock = threading.Lock()
@@ -2702,15 +2714,31 @@ async def fetch_testflight_status(session, tf_id):
             # Don't notify for closed status
 
         elif result["status"] == TestFlightStatus.OPEN:
-            # Beta is open - notify only if status changed or first check
-            if previous_status is None or previous_status != TestFlightStatus.OPEN:
-                should_notify = True
-                logging.info(
-                    f"200 - {app_name} - Beta is OPEN! "
-                    f"(changed from {previous_status.value if previous_status else 'unknown'})"
-                )
-            else:
-                logging.info(f"200 - {app_name} - Beta is still open (no notification)")
+            # Decide notification policy for OPEN status
+            with _open_notified_lock:
+                already_notified = _open_notified.get(tf_id, False)
+
+                if ALWAYS_NOTIFY_OPEN:
+                    should_notify = True
+                    logging.info(f"200 - {app_name} - Beta is OPEN (forced notification mode)")
+                elif not already_notified:
+                    # First ever OPEN notification for this TestFlight ID
+                    should_notify = True
+                    logging.info(
+                        f"200 - {app_name} - Beta is OPEN! "
+                        f"(changed from {previous_status.value if previous_status else 'unknown'})"
+                    )
+                elif previous_status is None or previous_status != TestFlightStatus.OPEN:
+                    # Status transitioned into OPEN from another state
+                    should_notify = True
+                    logging.info(
+                        f"200 - {app_name} - Beta is OPEN! (status change from {previous_status.value if previous_status else 'unknown'})"
+                    )
+                else:
+                    logging.info(f"200 - {app_name} - Beta is still open (no notification)")
+
+                if should_notify:
+                    _open_notified[tf_id] = True
 
         else:
             # Unknown status - log for investigation with more details
