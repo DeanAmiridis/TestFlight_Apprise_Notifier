@@ -9,7 +9,7 @@ import logging
 import asyncio
 import time
 from enum import Enum
-from typing import Dict, Optional
+from typing import Dict, Optional, Any, Deque
 from collections import deque
 from datetime import datetime, timedelta
 import aiohttp
@@ -54,6 +54,21 @@ STATUS_PATTERNS = {
         "become a tester",
         "join as a tester",
         "test this app",
+        # Newly added patterns for pages like:
+        # "To join the Dark Noise: Ambient Sounds beta, open the link on your iPhone, iPad, or Mac after you install TestFlight."
+        # These phrases appear on OPEN pages but were previously not matched.
+        "to join the",  # used in combination with app name and 'beta'
+        "open the link on your iphone",  # instruction for open enrollment
+        "after you install testflight",  # part of generic open instructions
+    ],
+}
+
+# Regex-based patterns (evaluated if plain substring patterns did not match)
+# Enables more precise matching for constructs like: "to join the <app name> beta"
+STATUS_REGEX_PATTERNS = {
+    TestFlightStatus.OPEN: [
+        # Generic open phrasing with app name
+        r"to join the [a-z0-9: _\-]+ beta",
     ],
 }
 
@@ -141,7 +156,7 @@ class RateLimiter:
         """
         self.max_requests = max_requests
         self.time_window = time_window
-        self.requests = deque()
+        self.requests: Deque[datetime] = deque()
         self.lock = asyncio.Lock()
 
     async def acquire(self):
@@ -222,7 +237,7 @@ async def check_testflight_status(
     timeout: int = 10,
     use_cache: bool = True,
     use_rate_limit: bool = True,
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     """
     Check TestFlight beta status asynchronously.
 
@@ -265,7 +280,7 @@ async def check_testflight_status(
     }
 
     try:
-        async with session.get(url, timeout=timeout) as resp:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
             # Handle HTTP errors
             if resp.status == 404:
                 result["status"] = TestFlightStatus.ERROR
@@ -318,7 +333,7 @@ async def check_testflight_status(
             # Store raw text for debugging (up to 500 chars for investigation)
             result["raw_text"] = raw_status_text or full_page_text[:300]
 
-            # Detect status based on text patterns
+            # Detect status based on substring patterns first
             detected = False
             for status, patterns in STATUS_PATTERNS.items():
                 for pattern in patterns:
@@ -326,9 +341,29 @@ async def check_testflight_status(
                         result["status"] = status
                         result["status_text"] = status.value.capitalize()
                         detected = True
+                        logging.debug(
+                            f"Detected {status.value} via pattern '{pattern}' for {url}"
+                        )
                         break
                 if detected:
                     break
+
+            # If still not detected, try regex patterns (more flexible)
+            if not detected:
+                for status, regex_list in STATUS_REGEX_PATTERNS.items():
+                    for regex_pattern in regex_list:
+                        import re
+
+                        if re.search(regex_pattern, page_text):
+                            result["status"] = status
+                            result["status_text"] = status.value.capitalize()
+                            detected = True
+                            logging.debug(
+                                f"Detected {status.value} via regex '{regex_pattern}' for {url}"
+                            )
+                            break
+                    if detected:
+                        break
 
             # If no pattern matched, status remains UNKNOWN
             if not detected:
@@ -409,7 +444,7 @@ async def check_testflight_status_with_retry(
     timeout: int = 10,
     use_cache: bool = True,
     use_rate_limit: bool = True,
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     """
     Check TestFlight status with exponential backoff retry logic.
 
